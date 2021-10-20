@@ -23,3 +23,5 @@
 *.nav
 *.toc
 
+#ignore .vscode
+.vscode
