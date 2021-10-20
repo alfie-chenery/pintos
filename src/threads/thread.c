@@ -358,7 +358,7 @@ thread_set_priority (int new_priority)
 
   //if no longer highest priorty, yield CPU
   struct list_elem *max_elem = list_max (&ready_list,
-                                         compare_priority_func,
+                                         &compare_priority_func,
                                          NULL);
   if (list_entry (max_elem, struct thread, elem)->priority
       > new_priority)
@@ -522,7 +522,7 @@ next_thread_to_run (void)
   else
     {
       struct list_elem *next_elem = list_max (&ready_list,
-                                              compare_priority_func,
+                                              &compare_priority_func,
                                               NULL);
       struct thread *next = list_entry (next_elem, struct thread, elem);
 
