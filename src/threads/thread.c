@@ -491,6 +491,9 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 
+  list_init(&t->priorities);
+  
+
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
@@ -621,9 +624,47 @@ uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 /* compares the priorities of two threads */
 bool
 compare_priority_func (const struct list_elem *a,
-                         const struct list_elem *b,
-                         void *aux UNUSED)
+                       const struct list_elem *b,
+                       void *aux UNUSED)
 {
   return list_entry (a, struct thread, elem)->priority <
          list_entry (b, struct thread, elem)->priority;
+}
+
+/* Finds the max of two integers */
+static int
+max (int a, int b)
+{
+  return a > b ? a : b;
+}
+
+/* Inserts a priority in the list of priorities of a thread */
+void
+thread_insert_priority(struct thread *t, int priority) 
+{
+  struct priority p;
+  p.priority = priority;
+  t->priority = max(priority, t->priority);
+  list_push_front(&t->priorities, &p.elem);
+}
+
+/* Removes a priority from the list of priorities of a thread */
+void
+thread_remove_priority(struct thread *t, int priority) 
+{
+  int new_priority = PRI_MIN;
+  bool removed = false;
+
+  for (struct list_elem *elem = list_begin(&t->priorities); 
+       elem != list_end(&t->priorities); 
+       elem = list_next(elem))
+    {
+      int elem_priority = list_entry(elem, struct priority, elem)->priority;
+      if (elem_priority == priority && !removed)
+        list_remove(elem), removed = true;
+      else
+        new_priority = max(elem_priority, new_priority);
+    }
+  
+  t->priority = new_priority;
 }

@@ -19,6 +19,13 @@ enum thread_status
 typedef int tid_t;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
+/* Struct to create list of priorities */
+struct priority
+  {
+    int priority;
+    struct list_elem elem;
+  };
+
 /* Thread priorities. */
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
@@ -92,6 +99,7 @@ struct thread
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+    struct list priorities;             /* List of all priorities */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -110,6 +118,9 @@ extern bool thread_mlfqs;
 bool compare_priority_func (const struct list_elem *a,
                             const struct list_elem *b,
                             void *aux UNUSED);
+
+void thread_insert_priority(struct thread *t, int priority);
+void thread_remove_priority(struct thread *t, int priority);
 
 void thread_init (void);
 void thread_start (void);
