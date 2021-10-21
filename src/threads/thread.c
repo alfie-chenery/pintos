@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -489,10 +490,8 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->base_priority = priority;
   t->magic = THREAD_MAGIC;
-
-  list_init(&t->priorities);
-  thread_insert_priority(t, priority);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -642,21 +641,27 @@ max (int a, int b)
 void
 thread_insert_priority(struct thread *t, int priority) 
 {
-  struct priority p;
-  p.priority = priority;
+  if (t->priorities == NULL) {
+    t->priorities = malloc (sizeof (struct list));
+    ASSERT (t->priorities != NULL);
+    list_init (t->priorities);
+  }
+
+  struct priority *p = malloc (sizeof (struct priority));
+  p->priority = priority;
   t->priority = max(priority, t->priority);
-  list_push_front(&t->priorities, &p.elem);
+  list_push_front(t->priorities, &p->elem);
 }
 
 /* Removes a priority from the list of priorities of a thread */
 void
 thread_remove_priority(struct thread *t, int priority) 
 {
-  int new_priority = PRI_MIN;
+  int new_priority = t->base_priority;
   bool removed = false;
 
-  for (struct list_elem *elem = list_begin(&t->priorities); 
-       elem != list_end(&t->priorities); 
+  for (struct list_elem *elem = list_begin(t->priorities); 
+       elem != list_end(t->priorities); 
        elem = list_next(elem))
     {
       int elem_priority = list_entry(elem, struct priority, elem)->priority;

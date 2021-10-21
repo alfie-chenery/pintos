@@ -245,17 +245,18 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  for (struct list_elem *elem = list_begin(&lock->priorities);
-       elem != list_end(&lock->priorities);
-       elem = list_next(elem))
+  for (struct list_elem *elem = list_begin (&lock->priorities);
+       elem != list_end (&lock->priorities);
+       elem = list_next (elem))
     {
-      int priority = list_entry(elem, struct priority, elem)->priority;
-      thread_remove_priority(lock->holder, priority);
-      list_remove(elem);
+      int priority = list_entry (elem, struct priority, elem)->priority;
+      thread_remove_priority (lock->holder, priority);
+      list_remove (elem);
     }
 
   lock->holder = NULL;
   sema_up (&lock->semaphore);
+  thread_set_priority (thread_get_priority ());
 }
 
 /* Returns true if the current thread holds LOCK, false

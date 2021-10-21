@@ -94,12 +94,13 @@ struct thread
     enum thread_status status;          /* Thread state. */
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
+    int base_priority;                  /* Base priority */
     int priority;                       /* Priority. */
+    struct list *priorities;            /* List of all priorities */
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
-    struct list priorities;             /* List of all priorities */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
