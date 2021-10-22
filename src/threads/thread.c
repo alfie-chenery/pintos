@@ -72,6 +72,13 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+/* Finds the max of two integers */
+static int
+max (int a, int b)
+{
+  return a > b ? a : b;
+}
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -355,7 +362,18 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  struct thread *t = thread_current ();
+  if (t->waiting_on != NULL)
+    thread_remove_priority (t->waiting_on, t->donated_priority);
+
+  t->base_priority = new_priority;
+  t->priority = max(t->base_priority, t->max_received_priority);
+
+  if (t->waiting_on != NULL)
+    {
+      thread_insert_priority (t->waiting_on, t->priority);
+      t->donated_priority = t->priority;
+    }
 
   //if no longer highest priorty, yield CPU
   struct list_elem *max_elem = list_max (&ready_list,
@@ -630,46 +648,49 @@ compare_priority_func (const struct list_elem *a,
          list_entry (b, struct thread, elem)->priority;
 }
 
-/* Finds the max of two integers */
-static int
-max (int a, int b)
-{
-  return a > b ? a : b;
-}
-
 /* Inserts a priority in the list of priorities of a thread */
 void
 thread_insert_priority(struct thread *t, int priority) 
 {
-  if (t->priorities == NULL) {
-    t->priorities = malloc (sizeof (struct list));
-    ASSERT (t->priorities != NULL);
-    list_init (t->priorities);
-  }
+  if (t->priorities == NULL) 
+    {
+      t->priorities = malloc (sizeof (struct list));
+      ASSERT (t->priorities != NULL);
+      list_init (t->priorities);
+    }
 
   struct priority *p = malloc (sizeof (struct priority));
   p->priority = priority;
-  t->priority = max(priority, t->priority);
-  list_push_front(t->priorities, &p->elem);
+  t->priority = max (priority, t->priority);
+  t->max_received_priority = max (priority, t->max_received_priority);
+  list_push_front (t->priorities, &p->elem);
+
+  if (t->waiting_on != NULL)
+    {
+      thread_remove_priority (t->waiting_on, t->donated_priority);
+      thread_insert_priority (t->waiting_on, t->priority);
+      t->donated_priority = t->priority;
+    }
 }
 
 /* Removes a priority from the list of priorities of a thread */
 void
 thread_remove_priority(struct thread *t, int priority) 
 {
-  int new_priority = t->base_priority;
+  t->max_received_priority = PRI_MIN;
   bool removed = false;
 
-  for (struct list_elem *elem = list_begin(t->priorities); 
-       elem != list_end(t->priorities); 
-       elem = list_next(elem))
+  for (struct list_elem *elem = list_begin (t->priorities); 
+       elem != list_end (t->priorities); 
+       elem = list_next (elem))
     {
-      int elem_priority = list_entry(elem, struct priority, elem)->priority;
+      int elem_priority = list_entry (elem, struct priority, elem)->priority;
       if (elem_priority == priority && !removed)
-        list_remove(elem), removed = true;
+        list_remove (elem), removed = true;
       else
-        new_priority = max(elem_priority, new_priority);
+        t->max_received_priority = max (elem_priority, 
+                                        t->max_received_priority);
     }
   
-  t->priority = new_priority;
+  t->priority = max (t->base_priority, t->max_received_priority);
 }

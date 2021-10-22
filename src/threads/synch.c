@@ -183,7 +183,6 @@ lock_init (struct lock *lock)
   ASSERT (lock != NULL);
 
   lock->holder = NULL;
-  list_init(&lock->priorities);
   sema_init (&lock->semaphore, 1);
 }
 
@@ -204,14 +203,26 @@ lock_acquire (struct lock *lock)
 
   if (lock->holder != NULL)
     {
-      thread_insert_priority(lock->holder, thread_get_priority());
-      struct priority p;
-      p.priority = thread_get_priority();
-      list_push_front(&lock->priorities, &p.elem);
+      thread_insert_priority (lock->holder, thread_get_priority ());
+      thread_current ()->waiting_on = lock->holder;
+      thread_current ()->donated_priority = thread_get_priority ();
+      //struct priority p;
+      //p.priority = thread_get_priority ();
+      //list_push_front (&lock->priorities, &p.elem);
     }
 
   sema_down (&lock->semaphore);
+  thread_current ()->waiting_on = NULL;
   lock->holder = thread_current ();
+
+  for (struct list_elem *elem = list_begin (&lock->semaphore.waiters);
+       elem != list_end (&lock->semaphore.waiters);
+       elem = list_next (elem))
+    {
+      int priority = list_entry (elem, struct thread, elem)->priority;
+      thread_insert_priority (lock->holder, priority);
+      //list_remove (elem);
+    }
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -245,18 +256,17 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  for (struct list_elem *elem = list_begin (&lock->priorities);
-       elem != list_end (&lock->priorities);
+  for (struct list_elem *elem = list_begin (&lock->semaphore.waiters);
+       elem != list_end (&lock->semaphore.waiters);
        elem = list_next (elem))
     {
-      int priority = list_entry (elem, struct priority, elem)->priority;
+      int priority = list_entry (elem, struct thread, elem)->priority;
       thread_remove_priority (lock->holder, priority);
-      list_remove (elem);
+      //list_remove (elem);
     }
 
   lock->holder = NULL;
   sema_up (&lock->semaphore);
-  thread_set_priority (thread_get_priority ());
 }
 
 /* Returns true if the current thread holds LOCK, false

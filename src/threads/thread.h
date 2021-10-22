@@ -97,6 +97,9 @@ struct thread
     int base_priority;                  /* Base priority */
     int priority;                       /* Priority. */
     struct list *priorities;            /* List of all priorities */
+    struct thread *waiting_on;          /* Thread which is being waited on */
+    int donated_priority;               /* The priority it donated */
+    int max_received_priority;          /* Maximum received priority */
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */
