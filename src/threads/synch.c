@@ -206,9 +206,6 @@ lock_acquire (struct lock *lock)
       thread_insert_priority (lock->holder, thread_get_priority ());
       thread_current ()->waiting_on = lock->holder;
       thread_current ()->donated_priority = thread_get_priority ();
-      //struct priority p;
-      //p.priority = thread_get_priority ();
-      //list_push_front (&lock->priorities, &p.elem);
     }
 
   sema_down (&lock->semaphore);
@@ -221,7 +218,6 @@ lock_acquire (struct lock *lock)
     {
       int priority = list_entry (elem, struct thread, elem)->priority;
       thread_insert_priority (lock->holder, priority);
-      //list_remove (elem);
     }
 }
 
@@ -262,7 +258,6 @@ lock_release (struct lock *lock)
     {
       int priority = list_entry (elem, struct thread, elem)->priority;
       thread_remove_priority (lock->holder, priority);
-      //list_remove (elem);
     }
 
   lock->holder = NULL;
