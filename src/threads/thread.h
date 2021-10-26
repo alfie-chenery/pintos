@@ -96,11 +96,13 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int base_priority;                  /* Base priority */
     int priority;                       /* Priority. */
-    struct list *priorities;            /* List of all priorities */
-    struct thread *waiting_on;          /* Thread which is being waited on */
-    int donated_priority;               /* The priority it donated */
-    int max_received_priority;          /* Maximum received priority */
+    struct list *priorities;            /* List of all priorities. */
+    struct thread *waiting_on;          /* Thread which is being waited on. */
+    int donated_priority;               /* The priority it donated. */
+    int max_received_priority;          /* Maximum received priority. */
     struct list_elem allelem;           /* List element for all threads list. */
+    int nice;                           /* Niceness of a thread. */
+    int32_t recent_cpu;                 /* Recent CPU of a thread. */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
@@ -157,5 +159,7 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+int get_ready_threads (void);
+void thread_recalculate_all (void);
 
 #endif /* threads/thread.h */

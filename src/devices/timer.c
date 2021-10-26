@@ -31,12 +31,15 @@ static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
-   and registers the corresponding interrupt. */
+   registers the corresponding interrupt and sets up the list
+   that stores the wake up times of threads and the lock that controls access 
+   to that list. */
 void
 timer_init (void) 
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+  list_init(&wake_signals);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -84,16 +87,40 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
-/* Sleeps for approximately TICKS timer ticks.  Interrupts must
-   be turned on. */
+/* Compares two wake_signal structs based on time of waking.
+   Returns true if and only if a is supposed to wake up before b.*/
+static bool
+compare_time (const struct list_elem *a, 
+              const struct list_elem *b, 
+              void *aux UNUSED)
+{
+  return list_entry(a, struct wake_signal, elem)->time < 
+    list_entry(b, struct wake_signal, elem)->time;
+}
+
+/* Sleeps for approximately TICKS timer ticks. The time when the thread must
+   wake up is added to the wake_signals list. When the required number of ticks
+   have passed, timer_interrupt() signals the current thread to wake up by 
+   upping the semaphore. Interrupts must be turned on. */
 void
 timer_sleep (int64_t ticks) 
 {
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+
+  if (ticks <= 0)
+    return;
+  
+  struct wake_signal wake_signal;
+  wake_signal.time = start + ticks;
+  sema_init(&wake_signal.semaphore, 0);
+
+  intr_disable();
+  list_insert_ordered(&wake_signals, &wake_signal.elem, compare_time, NULL);
+  intr_enable();
+
+  sema_down(&wake_signal.semaphore);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -166,11 +193,27 @@ timer_print_stats (void)
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
 
-/* Timer interrupt handler. */
+/* Timer interrupt handler. Increments the number of ticks.
+   Also signals a thread to wake up if its sleep time is over.*/
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+
+  while (!list_empty(&wake_signals)) 
+    {
+      if (list_entry(list_front(&wake_signals), 
+          struct wake_signal, elem)->time <= ticks)
+        sema_up(& list_entry(list_pop_front(&wake_signals), 
+                struct wake_signal, elem)->semaphore);
+      else
+        break;
+    }
+
+  thread_current ()->recent_cpu++;
+  if (timer_ticks () % TIMER_FREQ == 0 && thread_mlfqs)
+    thread_recalculate_all ();
+  
   thread_tick ();
 }
 
@@ -214,7 +257,7 @@ real_time_sleep (int64_t num, int32_t denom)
   /* Convert NUM/DENOM seconds into timer ticks, rounding down.
           
         (NUM / DENOM) s          
-     ---------------------- = NUM * TIMER_FREQ / DENOM ticks. 
+     ------------------- --- = NUM * TIMER_FREQ / DENOM ticks. 
      1 s / TIMER_FREQ ticks
   */
   int64_t ticks = num * TIMER_FREQ / denom;

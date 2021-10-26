@@ -3,9 +3,21 @@
 
 #include <round.h>
 #include <stdint.h>
+#include "../threads/synch.h"
+#include "../lib/kernel/list.h"
 
 /* Number of timer interrupts per second. */
 #define TIMER_FREQ 100
+
+/* Stores the time when a thread must wake up and a semaphore to signal it */
+struct wake_signal {
+    int time;
+    struct semaphore semaphore;
+    struct list_elem elem;
+};
+
+/* Stores all the wake times */
+struct list wake_signals;
 
 void timer_init (void);
 void timer_calibrate (void);
