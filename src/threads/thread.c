@@ -83,15 +83,20 @@ max (int a, int b)
 }
 
 /* Recalculates recent_cpu and priority of a thread */
-static void
-thread_recalculate (struct thread *t, void *aux UNUSED) 
+void
+thread_recalculate_recent_cpu (struct thread *t, void *aux UNUSED) 
 {
   int32_t recent_cpu_coef = divide_x_and_y (multiply_x_and_n (load_avg, 2),
     add_x_and_n (multiply_x_and_n (load_avg, 2), 1));
 
   t->recent_cpu = add_x_and_n (
     multiply_x_and_y (recent_cpu_coef, t->recent_cpu), t->nice);
+}
 
+/* Recalculates a thread's priority */
+void
+thread_recalculate_priority (struct thread *t, void *aux UNUSED)
+{
   int32_t fp_primax = from_integer (PRI_MAX);
   t->priority = to_integer_round_0 (subtract_n_from_x 
     (subtract_y_from_x (fp_primax, divide_x_and_n (t->recent_cpu, 4)),
@@ -102,6 +107,9 @@ thread_recalculate (struct thread *t, void *aux UNUSED)
   if (t->priority < PRI_MIN)
     t->priority = PRI_MIN;
 }
+
+/* Recalculates load average */
+
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -421,14 +429,15 @@ void
 thread_set_nice (int nice) 
 {
   thread_current ()->nice = nice;
-  thread_recalculate (thread_current (), NULL);
+  thread_recalculate_recent_cpu (thread_current (), NULL);
+  thread_recalculate_priority (thread_current (), NULL);
   
   //if no longer highest priorty, yield CPU
   struct list_elem *max_elem = list_max (&ready_list,
                                          &compare_priority_func,
                                          NULL);
   if (list_entry (max_elem, struct thread, elem)->priority
-      > thread_current ()->priority)
+      > thread_current ()->priority && !intr_context ())
     thread_yield ();
 }
 
@@ -744,17 +753,13 @@ get_ready_threads ()
 
 /* Recalculates load_avg, recent_cpu and priority */
 void
-thread_recalculate_all (void)
+thread_recalculate_load_avg (void)
 {
-  // Recalculating load average
   int32_t load_avg_coef = divide_x_and_n (from_integer (59), 60);
   load_avg = multiply_x_and_y (load_avg_coef, load_avg);
   
   int32_t ready_threads = from_integer (get_ready_threads ());
   load_avg = add_x_and_y (load_avg, divide_x_and_n (ready_threads, 60));
-
-  // Recalculating recent_cpu and priority
-  thread_foreach (thread_recalculate, NULL);
 }
 
 /* Increments the recent_cpu of the current thread by 1, provided it is not the

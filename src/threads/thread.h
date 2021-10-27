@@ -160,7 +160,9 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 int get_ready_threads (void);
-void thread_recalculate_all (void);
+void thread_recalculate_recent_cpu (struct thread *t, void *aux UNUSED);
+void thread_recalculate_priority (struct thread *t, void *aux UNUSED);
+void thread_recalculate_load_avg (void);
 void thread_increment_recent_cpu (void);
 
 #endif /* threads/thread.h */
