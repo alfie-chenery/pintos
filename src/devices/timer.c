@@ -210,7 +210,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
         break;
     }
 
-  thread_current ()->recent_cpu++;
+  thread_increment_recent_cpu ();
   if (timer_ticks () % TIMER_FREQ == 0 && thread_mlfqs)
     thread_recalculate_all ();
   

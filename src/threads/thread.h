@@ -161,5 +161,6 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 int get_ready_threads (void);
 void thread_recalculate_all (void);
+void thread_increment_recent_cpu (void);
 
 #endif /* threads/thread.h */
