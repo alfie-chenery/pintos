@@ -260,11 +260,19 @@ THREAD 2, which brings THREAD 2's priority back to 1.
 >> potentially change during the computation?
 >> Can you use a lock to avoid the race?
 
-To avoid race conditions interrupts can be disabled ensuring that when
-the priority list is being updated, the thread will not be preempted by
-a higher priority thread. As a result, the thread will finish computing
-its new priority and once complete, it can recompute its new priority
-when the donated priorities change.
+We have been able to avoid race conditions without using locks or disabling 
+interrupts. This is based on the fact that assigning a value to a variable is an
+atomic operation. In thread_set_priority(), the thread does not need to go 
+through all the donations that it has received but can just find the max of all 
+these donations using the max_received_priority field. Hence it would either use 
+the value that max_received_priority had before the donation had started, or the 
+value that it has after it has been completed but not any other illegal value. 
+In both thread_set_priority() as well as during donations, we change the 
+priority that the current thread has donated to the thread that it is waiting 
+on. However, we always first donate the new priority and then revoke the 
+priority we had initially donated. This makes sure that we never revoke twice 
+one after the other (and hence revoke a priority that we did not donate).
+
 
 
 

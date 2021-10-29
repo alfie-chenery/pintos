@@ -103,7 +103,7 @@ struct thread
     int max_received_priority;          /* Maximum received priority. */
     struct list_elem allelem;           /* List element for all threads list. */
     int nice;                           /* Niceness of a thread. */
-    fp1714 recent_cpu;                 /* Recent CPU of a thread. */
+    fp1714 recent_cpu;                  /* Recent CPU of a thread. */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */

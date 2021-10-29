@@ -52,7 +52,7 @@ struct kernel_thread_frame
 static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
-static fp1714 load_avg = 0;        /* Load average. */
+static fp1714 load_avg = 0;     /* Load average. */
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
@@ -406,8 +406,6 @@ void
 thread_set_priority (int new_priority) 
 {
   struct thread *t = thread_current ();
-  if (t->waiting_on != NULL)
-    thread_remove_priority (t->waiting_on, t->donated_priority);
 
   t->base_priority = new_priority;
   t->priority = max(t->base_priority, t->max_received_priority);
@@ -415,6 +413,7 @@ thread_set_priority (int new_priority)
   if (t->waiting_on != NULL)
     {
       thread_insert_priority (t->waiting_on, t->priority);
+      thread_remove_priority (t->waiting_on, t->donated_priority);
       t->donated_priority = t->priority;
     }
 
@@ -594,6 +593,7 @@ next_thread_to_run (void)
     return idle_thread;
   else
     {
+      /* Choose the thread with max priority. */
       struct list_elem *next_elem = list_max (&ready_list,
                                               &compare_priority_func,
                                               NULL);
@@ -705,6 +705,7 @@ compare_priority_func (const struct list_elem *a,
 void
 thread_insert_priority(struct thread *t, int priority) 
 {
+  /* If this is the first time the thread has received a donation */
   if (t->priorities == NULL) 
     {
       t->priorities = malloc (sizeof (struct list));
@@ -712,7 +713,9 @@ thread_insert_priority(struct thread *t, int priority)
       list_init (t->priorities);
     }
 
+  /* Adding to the list of received donations. */
   struct priority *p = malloc (sizeof (struct priority));
+  ASSERT (p != NULL);
   p->priority = priority;
   t->priority = max (priority, t->priority);
   t->max_received_priority = max (priority, t->max_received_priority);
@@ -721,8 +724,8 @@ thread_insert_priority(struct thread *t, int priority)
   /* if waiting on a thread, perform nested donation */
   if (t->waiting_on != NULL)
     {
-      thread_remove_priority (t->waiting_on, t->donated_priority);
       thread_insert_priority (t->waiting_on, t->priority);
+      thread_remove_priority (t->waiting_on, t->donated_priority);
       t->donated_priority = t->priority;
     }
 }
@@ -734,6 +737,7 @@ thread_remove_priority(struct thread *t, int priority)
   t->max_received_priority = PRI_MIN;
   bool removed = false;
 
+  /* Iterate through donated priorities and remove the required one. */
   for (struct list_elem *elem = list_begin (t->priorities); 
        elem != list_end (t->priorities); 
        elem = list_next (elem))
@@ -747,6 +751,14 @@ thread_remove_priority(struct thread *t, int priority)
     }
   
   t->priority = max (t->base_priority, t->max_received_priority);
+
+  /* If waiting on another thread, revoke initial priority and donate new one */
+  if (t->waiting_on != NULL)
+    {
+      thread_insert_priority (t->waiting_on, t->priority);
+      thread_remove_priority (t->waiting_on, t->donated_priority);
+      t->donated_priority = t->priority;
+    }
 }
 
 /* Returns the number of ready threads for load_avg calculation */
