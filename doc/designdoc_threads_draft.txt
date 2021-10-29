@@ -48,9 +48,10 @@ PL = Priority list
 LH = Which lock it's holding
 WF = Which thread it's waiting for
 
-     STEP 1				  STEP 2               STEP 3
-+--------------+     +--------------+     +--------------+
-| THREAD 1     |     | THREAD 2     |     | THREAD 3     |
+     STEP 1				  STEP 2               STEP 3      
++--------------+     +--------------+     +--------------+     
+| THREAD 1     |     | THREAD 2     |     | THREAD 3     |    
+| BP: 31       |     | BP: 32       |     | BP: 33       |
 | PL: 31       |     | PL: 32       |     | PL: 33       |
 | EP: 31       |     | EP: 32       |     | EP: 33       |
 | LH: None     |     | LH: None     |     | LH: None     |
@@ -61,32 +62,39 @@ WF = Which thread it's waiting for
  lock_acquire(A)      lock_acquire(A)      lock_acquire(B)
        |                    |                    |
        |                    |                    |
-       V                    V                    V
+       ↓                    ↓                    ↓
 +--------------+     +--------------+     +--------------+
 | THREAD 1     |     | THREAD 2     |     | THREAD 3     |
-| PL: 31       |     | PL: 32       |--+  | PL: 33       |
-| EP: 31       |     | EP: 32       |  |  | EP: 33       |
+| BP: 31       |     | BP: 32       |     | BP: 33       |
+| PL:          |     | PL:          |     | PL:          |
+| EP: 31       |     | EP: 32       |--+  | EP: 33       |
 | LH: A        |     | LH: B        |  |  | LH: C        |
 | WF: None     |     | WF: THREAD 1 |  |  | WF: THREAD 2 |
 +--------------+     +--------------+  |  +--------------+
-       |  Donate THREAD 2's  |         |         |
-       |	 priority		 V         |         V
-       |             +--------------+  |  +--------------+
-       +-----------> | THREAD 1     |  |  | THREAD 2     |
-					 | PL: 31,32    |--+->| PL: 32,33    |
-					 | EP: 32       |     | EP: 33       |
-					 | LH: A        |     | LH: B        |
-					 | WF: None     |     | WF: THREAD 1 |
-					 +--------------+     +--------------+
-                                                 |
-					Donate THREAD 3's			 V
-                         priority		  +--------------+
-										  | THREAD 1     |
-										  | PL: 31,32,33 |
-										  | EP: 33       |
-										  | LH: A        |
-										  | WF: None     |
-										  +--------------+
+       |  Donate THREAD 2's |          |         | Donate THREAD 3's 
+	   |    priority        ↓          |         ↓    priority to 2
+	   |             +--------------+  |  +--------------+
+	   |             | THREAD 1     |  +--| THREAD 2     |
+	   |             | BP: 31       |     | BP: 32       |
+	   +------------→| PL: 32       |     | PL: 33       |
+	                 | EP: 32       |     | EP: 33       |                         
+					 | LH: A        |     | LH: B        |                         
+					 | WF: None     |     | WF: THREAD 1 |                         
+					 +--------------+     +--------------+                         
+							|                     |    Donate THREAD 3's priority
+							|					  ↓      and revoke previously  
+                            |             +--------------+   donated priority.  
+							|             | THREAD 1     |---+                         
+							+-------------| BP: 31       |   |
+							              | PL: 33       |   |
+										  | EP: 33       |   |  +--------------+             
+										  | LH: A        |   |  | THREAD 2     |              
+										  | WF: None     |   +-→| BP: 32       |              
+ 										  +--------------+      | PL: 33       |              
+										                        | EP: 33       |              
+                                                                | LH: B        |
+                                                                | WF: THREAD 1 |
+                                                                +--------------+
 										  
 										  
 As shown in step 1, the first thread acquires lock A from a call to 
