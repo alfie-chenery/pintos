@@ -4,6 +4,7 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include "devices/timer.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -51,7 +52,7 @@ struct kernel_thread_frame
 static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
-static int32_t load_avg = 0;        /* Load average. */
+static fp1714 load_avg = 0;        /* Load average. */
 
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
@@ -86,7 +87,7 @@ max (int a, int b)
 void
 thread_recalculate_recent_cpu (struct thread *t, void *aux UNUSED) 
 {
-  int32_t recent_cpu_coef = divide_x_and_y (multiply_x_and_n (load_avg, 2),
+  fp1714 recent_cpu_coef = divide_x_and_y (multiply_x_and_n (load_avg, 2),
     add_x_and_n (multiply_x_and_n (load_avg, 2), 1));
 
   t->recent_cpu = add_x_and_n (
@@ -97,9 +98,9 @@ thread_recalculate_recent_cpu (struct thread *t, void *aux UNUSED)
 void
 thread_recalculate_priority (struct thread *t, void *aux UNUSED)
 {
-  int32_t fp_primax = from_integer (PRI_MAX);
+  fp1714 pri_max = from_integer (PRI_MAX);
   t->priority = to_integer_round_0 (subtract_n_from_x 
-    (subtract_y_from_x (fp_primax, divide_x_and_n (t->recent_cpu, 4)),
+    (subtract_y_from_x (pri_max, divide_x_and_n (t->recent_cpu, 4)),
        t->nice * 2));
 
   if (t->priority > PRI_MAX)
@@ -170,6 +171,15 @@ void
 thread_tick (void) 
 {
   struct thread *t = thread_current ();
+
+  thread_increment_recent_cpu ();
+  if (timer_ticks () % TIMER_FREQ == 0 && thread_mlfqs)
+    {
+      thread_recalculate_load_avg ();
+      thread_foreach (thread_recalculate_recent_cpu, NULL);
+    }
+  if (timer_ticks () % TIME_SLICE == 0 && thread_mlfqs)
+    thread_foreach (thread_recalculate_priority, NULL);
 
   /* Update statistics. */
   if (t == idle_thread)
@@ -413,7 +423,7 @@ thread_set_priority (int new_priority)
                                          &compare_priority_func,
                                          NULL);
   if (list_entry (max_elem, struct thread, elem)->priority
-      > new_priority)
+      > t->priority)
     thread_yield ();
 }
 
@@ -537,7 +547,7 @@ is_thread (struct thread *t)
    NAME. */
 static void
 init_thread (struct thread *t, const char *name, 
-             int priority, int32_t recent_cpu)
+             int priority, fp1714 recent_cpu)
 {
   enum intr_level old_level;
 
@@ -708,6 +718,7 @@ thread_insert_priority(struct thread *t, int priority)
   t->max_received_priority = max (priority, t->max_received_priority);
   list_push_front (t->priorities, &p->elem);
 
+  /* if waiting on a thread, perform nested donation */
   if (t->waiting_on != NULL)
     {
       thread_remove_priority (t->waiting_on, t->donated_priority);
@@ -755,10 +766,10 @@ get_ready_threads ()
 void
 thread_recalculate_load_avg (void)
 {
-  int32_t load_avg_coef = divide_x_and_n (from_integer (59), 60);
+  fp1714 load_avg_coef = divide_x_and_n (from_integer (59), 60);
   load_avg = multiply_x_and_y (load_avg_coef, load_avg);
   
-  int32_t ready_threads = from_integer (get_ready_threads ());
+  fp1714 ready_threads = from_integer (get_ready_threads ());
   load_avg = add_x_and_y (load_avg, divide_x_and_n (ready_threads, 60));
 }
 
