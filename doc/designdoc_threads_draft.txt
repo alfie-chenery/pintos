@@ -82,22 +82,22 @@ DP: Donated priority
 	   |             | BP: 31       |     | BP: 32       |
 	   |             | DP:          |     | DP: 32       |     
 	   |             | PL: 32       |     | PL: 33       |
-	   +------------→| EP: 32       |     | EP: 33       |                         
-					 | LH: A        |     | LH: B        |                         
-					 | WF: None     |     | WF: THREAD 1 |                         
-					 +--------------+     +--------------+                         
+	   +------------→| EP: 32       |     | EP: 33       |                      
+					 | LH: A        |     | LH: B        |                      
+					 | WF: None     |     | WF: THREAD 1 |                      
+					 +--------------+     +--------------+                       
 							|                     |  Donate THREAD 3's priority 
 							|					  ↓      and revoke previously  
                             |             +--------------+   donated priority.  
-							|             | THREAD 1     |---+                         
+							|             | THREAD 1     |---+                   
 							+-------------| BP: 31       |   |
 							              | PL: 33       |   |
-										  | EP: 33       |   |  +--------------+             
-										  | LH: A        |   |  | THREAD 2     |              
+										  | EP: 33       |   |  +--------------+
+										  | LH: A        |   |  | THREAD 2     | 
 										  | WF: None     |   +-→| BP: 32       |
-                                          +--------------+      | DP: 33       |  
- 										                        | PL: 33       |              
-										                        | EP: 33       |              
+                                          +--------------+      | DP: 33       | 
+ 										                        | PL: 33       | 
+										                        | EP: 33       | 
                                                                 | LH: B        |
                                                                 | WF: THREAD 1 |
                                                                 +--------------+
