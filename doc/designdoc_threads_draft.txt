@@ -14,26 +14,29 @@ Prakhar Nagpal 		<pn320@ic.ac.uk>
 >> global or static variable, `typedef', or enumeration.  
 >> Identify the purpose of each in roughly 25 words.
 
+Added to thread.h
+
 /* Struct to create list of priorities */
 struct priority
   {
     int priority;
     struct list_elem elem;
   };
+
+A list of this struct is stored in each thread. A single struct priority Stores
+the value of a priority which has been donated to a thread.
   
-Added to thread struct (thread.h):
+Added to struct thread (thread.h):
  
+int base_priority;                  /* Base priority */
 struct list *priorities; 			/* List of all priorities */
 struct thread *waiting_on;          /* Thread which is being waited on */
 int donated_priority;               /* The priority it donated */
 int max_received_priority;          /* Maximum received priority */
 
-
-Added to lock struct (synch.h):
-
-struct list *priorities;    		/* List of priorities donated to holder */
-
-
+struct list *priorities stores all the priorities which have been donated to the
+thread. We had to store this as a pointer because otherwise the list would
+automatically get overwritten whenever a context switch would take place.
 
 >> A2: (4 marks) ***
 >> Draw a diagram that illustrates a nested donation in your structure and 
@@ -93,24 +96,37 @@ so now THREAD 2 has to wait for THREAD 1. As a result, THREAD 2 donates
 its priority to THREAD 1 using the thread_insert_priority() function and
 its waiting_on field is set to THREAD 1.
 
-Later on as shown in step 3, THREAD 3 acquires lock C successfully as
-it is not being used by any other thread. THREAD 3 then tries to acquire
-lock B, however lock C is currently being held by THREAD 2. As a result,
-just like in step 2, THREAD 3 donates its priority to THREAD 2 and waits
-for it to be released. The only difference here is in our thread_insert_priority()
-function, we hit the case where the waiting_on field is not NULL (in
-this case it would be THREAD 1). As a result, thread_insert_priority() is
-called once more with THREAD 1 and THREAD 3's priority as the parameter.
-This demonstrates nested donation and if THREAD 1 was also waiting on another
-thread, the same process is repeated until a thread which is not waiting
-is found.
+Later on as shown in step 3, THREAD 3 acquires lock C successfully as it is not 
+being used by any other thread. THREAD 3 then tries to acquire lock B, however 
+lock B is currently being held by THREAD 2. As a result, just like in step 2, 
+THREAD 3 donates its priority to THREAD 2 and waits for the lock to be released. 
+The only difference here is in our thread_insert_priority() function, we hit the 
+case where the waiting_on field is not NULL (in this case it would be THREAD 1). 
+As a result, THREAD 2 revokes the priority which it had initially donated to 
+THREAD 1 (which is stored in t->donated_priority) by using 
+thread_remove_priority(), and donates its new effective priority to THREAD 1 
+using thread_insert_priority(). This ensures that one thread has only donated 
+atmost once to any other thread and makes revoking donated priorities during the 
+release of a lock easier. This demonstrates nested donation and if THREAD 1 was 
+also waiting on another thread, the same process is repeated until a thread 
+which is not waiting is found.
 
-Once a call to lock_release() is made on THREAD 1, lock A is released. During
-this process, THREAD 1's original priority is restored through calls to
-thread_remove_priority() on all its waiters (in this scenario THREAD 2 and
-THREAD 3) and THREAD 2 is now able to acquire lock A. The exact same process
-occurs when THREAD 2 calls lock_release() on lock B (i.e. THREAD 2 removes
-all it's waiter's priorities and allows THREAD 3 to acquire lock B).
+Once THREAD 1 releases lock A using lock_release(), THREAD 1's original priority 
+is restored. In order to do this, we iterate through all the threads that were 
+waiting on the lock (in this case THREAD 2) to be released and revoke the 
+priorities that each of them had donated to THREAD 1 by using 
+thread_remove_priority(). We now choose the thread which has the highest 
+effective priority and is waiting on the lock to be the next thread that 
+acquires the lock (which is THREAD 2 in this case). Note that in order to 
+maintain the invariant that all threads which are waiting on a lock have donated
+their effective priorities to the thread which is holding the lock, all threads 
+waiting on the lock would donate their priorities to the new thread which just 
+acquired the lock, even if their priorities are lower. In this way, THREAD 2 is 
+able to acquire lock A. Also, note that if THREAD 1 was holding other locks as 
+well and had received priorities for those, those priorities would not be 
+revoked in this case. The exact same process occurs when THREAD 2 calls 
+lock_release() on lock B (i.e. THREAD 2 removes all it's waiter's priorities and 
+allows THREAD 3 to acquire lock B).
 
 					 
 ---- ALGORITHMS ----
@@ -121,11 +137,29 @@ all it's waiter's priorities and allows THREAD 3 to acquire lock B).
 >> How do you ensure that the highest priority waiting thread wakes up first for
 >> a (i) lock, (ii) semaphore, or (iii) condition variable?
 
-Using the list_max() function the waiter with the highest
-priority is selected and removed the list. The compare_priority_func()
-acts as the minimum function which is used to select the
-waiter with the higher priority.
+Using the list_max() function the waiter with the highest priority is selected 
+and removed from the list. The compare_priority_func() compares the effective 
+priorities of two threads. This function is passed as an argument to list_max() 
+to find the thread with the highest priority.
 
+For semaphores, whenever sema_up() is called, we find the thread in the list of 
+waiters of the semaphore with the highest effective priority. We then remove 
+that thread from the list of waiters and unblock it.
+
+We do not need to do anything else for locks since locks use semaphores under 
+the hood. However, we added additional code to make sure that all priorities 
+which were donated to the thread which was holding the lock are removed when 
+that thread releases the lock.
+
+Condition variables store a list of semaphore_elems. Each semaphore_elem has a 
+semaphore with a single waiter. We write a function called 
+compare_semaphore_func() which can take a pointer to two list_elem of 
+semaphore_elem structs, extract the waiting thread from the respective 
+semaphores and compare their effective priorities. We pass this function as an 
+argument to list_max() so that it can iterate through all the waiters of the
+condition variable and return the semaphore_elem which has the waiting thread of
+the highest priority. This thread is then removed from the list of waiters and 
+then unblocked.
 
 
 >> A4: (3 marks)
@@ -134,30 +168,46 @@ waiter with the higher priority.
 >> How is nested donation handled?
 
 1) If the lock is held, do the following:
-	a) Add the thread's priority to the lock holder's priority list:
-		i)  If the holder's priority > the current thread's priority
-		    then keep the same priority.
-		ii) The current thread donates it's priority to the lock holder
-		    if it has a higher priority than it.
-	b) Signal that the thread is waiting on the lock's holder.
-2) Call sema_down which does the following:
+	a) Donate the current thread's priority to the lock holder by calling 
+	   thread_insert_priority().
+	    i)	The current thread's priority is added to the lock holder's list of 
+			received priorities and the lock holder's effective priority is 
+			recalculated.
+		ii) If the lock holder is waiting on another thread, then it revokes the 
+			priority which it had initially donated to that thread and now 
+			donates its new effective priority.
+	b) Set the current thread's waiting_on and donated_priority fields.
+
+2) Call sema_down on the lock's sempahore which does the following:
 	a) Disable interrupts.
 	b) Adds the current thread to the semaphore's waiters list.
 	c) Blocks the thread until the sempahore value becomes positive.
 	d) Decrement the semphore value.
 	d) Revert to the original interrupts level before calling the function.
-3) Signal the thread is no longer waiting on the previous holder.
+
+3) When the current thread returns from sema_down, we know that it now holds the 
+   lock, hence we update its waiting_on field (this is safe to do since a 
+   thread cannot be waiting to acquire more than one lock at one time).
+
 4) Set the lock's current holder to the current thread.
-5) Add all the priorities of the waiters to the current thread's priority
-   list - this will set the priority of the current thread to the highest
-   priority in the list.
+
+5) All the threads which are now waiting to acquire the lock donate their 
+   priorities to the current thread which has just acquired the lock. We do this
+   despite the fact that these donations would not change the current thread's 
+   effective priority because it lets us maintain the invariant that all the 
+   waiters of a lock have donated their priorities to the holder. It also makes 
+   handling nested donations much eaiser.
    
-Step 5 describes the behaviour of nested donation; when the thread acquires
-the lock, it must now temporarily inherit the priorities of the threads
-waiting to acquire the lock to ensure priority inversion does not occur. As
-a result, the thread_insert_priority() function will select the highest priority
-each time a priority is added to the thread's priority list therefore ensuring
-that the thread is not interrupted.
+Step 1) a) ii) describes nested donations. This uses the fact that a single 
+thread can only be blocked by one other thread at a given time. Suppose THREAD 1 
+has priority 2 and holds lock A, but is waiting on THREAD 2 (say for lock B) 
+which had a base priority of 1 (and hence A donated its priority to 2). Now, 
+assume THREAD 3 with priority 3 tries to acquire lock A. Then, it would donate 
+its priority to THREAD 1. When this happens, the mentioned step gets triggered 
+and THREAD 1 revokes the priority of 2 which it had initially donated to 
+THREAD 2 and donates its new effective priority of 3. Then, when THREAD 2 
+releases lock B, THREAD 1 revokes the priority of 3 which it had donated to 
+THREAD 2, which brings THREAD 2's priority back to 1.
 
 
 >> A5: (3 marks)
@@ -166,12 +216,17 @@ that the thread is not interrupted.
 
 1) Ensure the current thread holds the lock (if not an assertion
    error occurs).
-2) Remove all the waiters from the current thread's priority list
-   using the thread_remove_priority() function
-	a) This function will cause the priority of the current thread to
-	   either revert to its original value or the value of the highest
-	   priority in its priority list.
+
+2) Iterate through all the threads which are waiting on the lock and revoke the 
+   priorities that these threads had donated to the lock holder (the current 
+   thread) using thread_remove_priority().
+    a) This will cause the current thread's priority to either revert to its 
+	   base priority or change to a priority that was donated to it because it 
+	   holds some other lock as well.
+
+
 3) Set the lock's holder to NULL
+
 4) Call sema_up which does the following:
 	a) Disable interrupts.
 	b) Increase the semaphore's value to 1. This now allows any waiters
@@ -207,10 +262,44 @@ when the donated priorities change.
 >> Why did you choose this design?  
 >> In what ways is it superior to another design you considered?
 
-This design removes the need to implement an ordered list structure
-and having to re-order the list each time a new priority is added.
-The provided list_max() function along with the compare_priority_func()
-helper function made this design simple, readable and straightforward.
+We chose this design because it is relatively simple and easier to code but is 
+still correct. We separate a thread's base priority and the list of its donated 
+priorities so that priority donation and thread_set_priority() can work fairly 
+independently of one another.
+
+We make sure that whenever a priority is donated or revoked or the basee 
+priority of a thread is changed, we immediately recalculate the thread's 
+effective priority so that when we want to compare the priorities of two 
+threads, we only need to look at a field and not calculate anything. By storing 
+the max priority a thread has received in a separate variable, we make sure that 
+recalculating the thread's effective priority does not increase the time 
+complexity of the code.
+
+This makes choosing the next thread to run very easy, and can be done using a 
+call to list_max (this holds true for the ready_list, semaphores as well as 
+condition variables).
+
+We enforce the invariant that all threads which are waiting to acquire a lock 
+must donate their priorities to the lock holder. This helps us in revoking all 
+the donations which a thread has received because of holding that specific lock 
+(and only those donations and not those which it has received because of 
+holding some other lock).
+
+In order to handle nested donations, for each thread, we store a pointer to the 
+thread that it is waiting on (if any). If any event occurs which can change a 
+thread's effective priority (say a new priority donation or a call to 
+thread_set_priority), we make sure to revoke any donation that it had 
+made earlier and perform a new donation with the new effective priority. This 
+makes sure that at any point, a given thread has made atmost one donation to any
+other thread and makes revoking this donation later much easier.
+
+One other design that we considered was to store the list of donations made 
+because of a lock and update this list whenever new donations were made or 
+nested ones were made. However, we dropped this idea as it would be much more 
+difficult to code, since we would need to update the locks whenever a change in 
+priority happened. Hence we enforced the invariant that all threads waiting on a 
+lock must donate their priority to the lock holder, regardless of whether this 
+donation makes a difference to the priority of the lock holder.
 
 
               ADVANCED SCHEDULER
@@ -225,19 +314,29 @@ helper function made this design simple, readable and straightforward.
 >> global or static variable, `typedef', or enumeration. 
 >> Identify the purpose of each in roughly 25 words.
 
-Added to thread struct (thread.h):
+Added to struct thread (thread.h):
 
 int nice;                           /* Niceness of a thread. */
-int32_t recent_cpu;                 /* Recent CPU of a thread. */
+fp1714 recent_cpu;                  /* Recent CPU of a thread. */
 
-/* Stores the time when a thread must wake up and a semaphore to signal it */
-struct wake_signal 
-  {
-    int time;
-    struct semaphore semaphore;
-    struct list_elem elem;
-  };
 
+Added to thread.c
+
+static fp1714 load_avg = 0;     /* Load average. */
+
+Stores the load average as a 17-14 fixed point variable.
+
+#define TIME_SLICE 4            /* # of timer ticks to give each thread. */
+
+Defines the time frame after which priorities must be recalculated.
+
+
+Added to fixed-point.h
+
+typedef int32_t fp1714;
+
+Helps to disambiguate when a variable is meant to be used as an int32_t and when 
+it is meant to be used as a 17-14 fixed point.
 
 
 ---- ALGORITHMS ----
@@ -271,13 +370,16 @@ ticks   A   B   C   A   B   C   to run
 >> uncertain? 
 >> If so, what rule did you use to resolve them?
 
-When recalculating recent_cpu, we have to take into account that
-whichever thread is currently running has to yield in order to compute
-the new value. As a result, each thread spends slightly less than
-4 ticks running. This causes a slight inaccuracy since when we add 1 to
-the recent_cpu each tick, we are assuming the thread is running the
-entire duration. Furthermore, as the priority is also dependent on the 
-recent_cpu, these values are also uncertain.
+When the timer interrupt runs, there are certain times when the load_avg, 
+recent_cpu of threads and priorities of threads need to be recalculated. This 
+causes a slight inaccuracy since when we add 1 to the recent_cpu each tick, 
+we are assuming the thread is running the entire duration. However, in this 
+case, the thread would not be running for the entire duration. Hence we would 
+overestimate the thread's recent_cpu and give it a lower priority, since that is 
+dependent on the recent_cpu.
+
+We resolve these by trying to make sure that the timer interrupt does not do any 
+unnecessary work and runs in the fastest possible time.
 
 ---- RATIONALE ----
 
@@ -285,3 +387,26 @@ recent_cpu, these values are also uncertain.
 >> Briefly critique your design, pointing out advantages and disadvantages in 
 >> your design choices.
 
+We decided to use only one queue to store all the threads with all the 
+priorities rather than using 64 different queues, as this helped us reuse a lot 
+of the code that we had written for priority scheduling. We continue to make 
+sure that thread->priority stores the current effective priority of a thread, so 
+that all the scheduling and comparison functions that we had written for 
+priority scheduling continue to work.
+
+When the max priority thread is being removed from the ready list, if there are 
+multiple threads that have the same priority, list_max() and 
+compare_priority_func() (a function we wrote to compare thread priorities) make 
+sure that the first of these are chosen, since compare_priority_func returns 
+false if both the inputs have the same priority. Moreover, when a thread is 
+added to the ready list, it is added to the back of the list. Hence, the first 
+thread is popped out and then when it is done, it is added back to the end. This 
+allows us to enforce round robin scheduling in the case when there are multiple 
+threads with the same priority. However, it did not rqeuire us to add any new 
+code or modify existing code.
+
+The biggest advantages of our design choices are the simplicity of the resulting 
+code and the fact that a lot of code from the previous tasks can be reused. 
+However, a disadvantage of this is that our code would run slower than a code
+which uses 64 queues when there are many ready threads, since the code which 
+uses 64 queues would not have to traverse the entire ready list.
