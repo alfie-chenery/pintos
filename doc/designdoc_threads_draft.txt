@@ -47,11 +47,14 @@ EP = Effective priority
 PL = Priority list
 LH = Which lock it's holding
 WF = Which thread it's waiting for
+BP: Base priority
+DP: Donated priority
 
      STEP 1				  STEP 2               STEP 3      
 +--------------+     +--------------+     +--------------+     
 | THREAD 1     |     | THREAD 2     |     | THREAD 3     |    
 | BP: 31       |     | BP: 32       |     | BP: 33       |
+| DP:          |     | DP:          |     | DP:          |
 | PL: 31       |     | PL: 32       |     | PL: 33       |
 | EP: 31       |     | EP: 32       |     | EP: 33       |
 | LH: None     |     | LH: None     |     | LH: None     |
@@ -66,6 +69,7 @@ WF = Which thread it's waiting for
 +--------------+     +--------------+     +--------------+
 | THREAD 1     |     | THREAD 2     |     | THREAD 3     |
 | BP: 31       |     | BP: 32       |     | BP: 33       |
+| DP:          |     | DP: 32       |     | DP: 33       |
 | PL:          |     | PL:          |     | PL:          |
 | EP: 31       |     | EP: 32       |--+  | EP: 33       |
 | LH: A        |     | LH: B        |  |  | LH: C        |
@@ -76,12 +80,13 @@ WF = Which thread it's waiting for
 	   |             +--------------+  |  +--------------+
 	   |             | THREAD 1     |  +--| THREAD 2     |
 	   |             | BP: 31       |     | BP: 32       |
-	   +------------→| PL: 32       |     | PL: 33       |
-	                 | EP: 32       |     | EP: 33       |                         
+	   |             | DP:          |     | DP: 32       |     
+	   |             | PL: 32       |     | PL: 33       |
+	   +------------→| EP: 32       |     | EP: 33       |                         
 					 | LH: A        |     | LH: B        |                         
 					 | WF: None     |     | WF: THREAD 1 |                         
 					 +--------------+     +--------------+                         
-							|                     |    Donate THREAD 3's priority
+							|                     |  Donate THREAD 3's priority 
 							|					  ↓      and revoke previously  
                             |             +--------------+   donated priority.  
 							|             | THREAD 1     |---+                         
@@ -89,8 +94,9 @@ WF = Which thread it's waiting for
 							              | PL: 33       |   |
 										  | EP: 33       |   |  +--------------+             
 										  | LH: A        |   |  | THREAD 2     |              
-										  | WF: None     |   +-→| BP: 32       |              
- 										  +--------------+      | PL: 33       |              
+										  | WF: None     |   +-→| BP: 32       |
+                                          +--------------+      | DP: 33       |  
+ 										                        | PL: 33       |              
 										                        | EP: 33       |              
                                                                 | LH: B        |
                                                                 | WF: THREAD 1 |
