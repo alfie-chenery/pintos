@@ -54,11 +54,11 @@ WF = Which thread it's waiting for
 | WF: None     |     | WF: None     |     | WF: None     |
 +--------------+     +--------------+     +--------------+
        |                    |                    |
-	   |              lock_acquire(B)      lock_acquire(C)
+       |              lock_acquire(B)      lock_acquire(C)
  lock_acquire(A)      lock_acquire(A)      lock_acquire(B)
        |                    |                    |
-	   |                    |                    |
-	   V                    V                    V
+       |                    |                    |
+       V                    V                    V
 +--------------+     +--------------+     +--------------+
 | THREAD 1     |     | THREAD 2     |     | THREAD 3     |
 | PL: 31       |     | PL: 32       |--+  | PL: 33       |
@@ -67,17 +67,17 @@ WF = Which thread it's waiting for
 | WF: None     |     | WF: THREAD 1 |  |  | WF: THREAD 2 |
 +--------------+     +--------------+  |  +--------------+
        |  Donate THREAD 2's  |         |         |
-	   |	 priority		 V         |         V
-	   |             +--------------+  |  +--------------+
-	   +-----------> | THREAD 1     |  |  | THREAD 2     |
+       |	 priority		 V         |         V
+       |             +--------------+  |  +--------------+
+       +-----------> | THREAD 1     |  |  | THREAD 2     |
 					 | PL: 31,32    |--+->| PL: 32,33    |
 					 | EP: 32       |     | EP: 33       |
 					 | LH: A        |     | LH: B        |
 					 | WF: None     |     | WF: THREAD 1 |
 					 +--------------+     +--------------+
-												 |
+                                                 |
 					Donate THREAD 3's			 V
-						priority		  +--------------+
+                         priority		  +--------------+
 										  | THREAD 1     |
 										  | PL: 31,32,33 |
 										  | EP: 33       |
