@@ -413,7 +413,7 @@ thread_set_priority (int new_priority)
                                          &compare_priority_func,
                                          NULL);
   if (list_entry (max_elem, struct thread, elem)->priority
-      > new_priority)
+      > t->priority)
     thread_yield ();
 }
 
@@ -708,6 +708,7 @@ thread_insert_priority(struct thread *t, int priority)
   t->max_received_priority = max (priority, t->max_received_priority);
   list_push_front (t->priorities, &p->elem);
 
+  /* if waiting on a thread, perform nested donation */
   if (t->waiting_on != NULL)
     {
       thread_remove_priority (t->waiting_on, t->donated_priority);

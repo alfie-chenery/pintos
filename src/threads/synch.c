@@ -256,7 +256,7 @@ lock_release (struct lock *lock)
        elem != list_end (&lock->semaphore.waiters);
        elem = list_next (elem))
     {
-      int priority = list_entry (elem, struct thread, elem)->priority;
+      int priority = list_entry (elem, struct thread, elem)->donated_priority;
       thread_remove_priority (lock->holder, priority);
     }
 
