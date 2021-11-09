@@ -18,6 +18,8 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
+//maximum size of array which holds command AND its parameters
+#define MAX_COMMAND_LINE_PARAMS 128
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -39,8 +41,28 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+
+  // Unsure where to put this code block
+  /*tokenise file name into command and parameters */
+  char *token;
+  char *save_ptr;
+  char * parameters[MAX_COMMAND_LINE_PARAMS];
+  int i = 1;
+
+  token = strtok_r (file_name, " ", &save_ptr);
+  parameters[0] = token;
+
+  while (token != NULL){
+    token = strtok_r (NULL, " ", &save_ptr);
+    parameters[i] = token;
+    i++;
+  }
+  //---------------------
+
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  //tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (parameters[0], PRI_DEFAULT, start_process, &parameters + 1);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
