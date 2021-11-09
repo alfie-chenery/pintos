@@ -1,0 +1,287 @@
+---- GROUP ----
+
+Alfie Chenery 		<ac320@ic.ac.uk>
+Carltone Kapfunde 	<csk20@ic.ac.uk>
+Dhruv Saraff 		<ds3520@ic.ac.uk>
+Prakhar Nagpal 		<pn320@ic.ac.uk>
+
+---- DATA STRUCTURES ----
+
+
+
+>> A1: (2 marks) 
+>> Copy here the declaration of each new or changed `struct' or `struct' member,
+>> global or static variable, `typedef', or enumeration.  
+>> Identify the purpose of each in roughly 25 words.
+
+/* Struct to create list of priorities */
+struct priority
+  {
+    int priority;
+    struct list_elem elem;
+  };
+  
+Added to thread struct (thread.h):
+ 
+struct list *priorities; 			/* List of all priorities */
+struct thread *waiting_on;          /* Thread which is being waited on */
+int donated_priority;               /* The priority it donated */
+int max_received_priority;          /* Maximum received priority */
+
+
+Added to lock struct (synch.h):
+
+struct list *priorities;    		/* List of priorities donated to holder */
+
+
+
+>> A2: (4 marks) ***
+>> Draw a diagram that illustrates a nested donation in your structure and 
+>> briefly explain how this works.
+
+Key:
+EP = Effective priority
+PL = Priority list
+LH = Which lock it's holding
+WF = Which thread it's waiting for
+
+     STEP 1				  STEP 2               STEP 3
++--------------+     +--------------+     +--------------+
+| THREAD 1     |     | THREAD 2     |     | THREAD 3     |
+| PL: 31       |     | PL: 32       |     | PL: 33       |
+| EP: 31       |     | EP: 32       |     | EP: 33       |
+| LH: None     |     | LH: None     |     | LH: None     |
+| WF: None     |     | WF: None     |     | WF: None     |
++--------------+     +--------------+     +--------------+
+       |                    |                    |
+	   |              lock_acquire(B)      lock_acquire(C)
+ lock_acquire(A)      lock_acquire(A)      lock_acquire(B)
+       |                    |                    |
+	   |                    |                    |
+	   V                    V                    V
++--------------+     +--------------+     +--------------+
+| THREAD 1     |     | THREAD 2     |     | THREAD 3     |
+| PL: 31       |     | PL: 32       |--+  | PL: 33       |
+| EP: 31       |     | EP: 32       |  |  | EP: 33       |
+| LH: A        |     | LH: B        |  |  | LH: C        |
+| WF: None     |     | WF: THREAD 1 |  |  | WF: THREAD 2 |
++--------------+     +--------------+  |  +--------------+
+       |  Donate THREAD 2's  |         |         |
+	   |	 priority		 V         |         V
+	   |             +--------------+  |  +--------------+
+	   +-----------> | THREAD 1     |  |  | THREAD 2     |
+					 | PL: 31,32    |--+->| PL: 32,33    |
+					 | EP: 32       |     | EP: 33       |
+					 | LH: A        |     | LH: B        |
+					 | WF: None     |     | WF: THREAD 1 |
+					 +--------------+     +--------------+
+												 |
+					Donate THREAD 3's			 V
+						priority		  +--------------+
+										  | THREAD 1     |
+										  | PL: 31,32,33 |
+										  | EP: 33       |
+										  | LH: A        |
+										  | WF: None     |
+										  +--------------+
+										  
+										  
+As shown in step 1, the first thread acquires lock A from a call to 
+lock_acquire(). In step 2, the second thread acquires lock B and then 
+attempts to acquire lock A. However, lock A is currently being held by THREAD 1, 
+so now THREAD 2 has to wait for THREAD 1. As a result, THREAD 2 donates 
+its priority to THREAD 1 using the thread_insert_priority() function and
+its waiting_on field is set to THREAD 1.
+
+Later on as shown in step 3, THREAD 3 acquires lock C successfully as
+it is not being used by any other thread. THREAD 3 then tries to acquire
+lock B, however lock C is currently being held by THREAD 2. As a result,
+just like in step 2, THREAD 3 donates its priority to THREAD 2 and waits
+for it to be released. The only difference here is in our thread_insert_priority()
+function, we hit the case where the waiting_on field is not NULL (in
+this case it would be THREAD 1). As a result, thread_insert_priority() is
+called once more with THREAD 1 and THREAD 3's priority as the parameter.
+This demonstrates nested donation and if THREAD 1 was also waiting on another
+thread, the same process is repeated until a thread which is not waiting
+is found.
+
+Once a call to lock_release() is made on THREAD 1, lock A is released. During
+this process, THREAD 1's original priority is restored through calls to
+thread_remove_priority() on all its waiters (in this scenario THREAD 2 and
+THREAD 3) and THREAD 2 is now able to acquire lock A. The exact same process
+occurs when THREAD 2 calls lock_release() on lock B (i.e. THREAD 2 removes
+all it's waiter's priorities and allows THREAD 3 to acquire lock B).
+
+					 
+---- ALGORITHMS ----
+
+
+
+>> A3: (3 marks) 
+>> How do you ensure that the highest priority waiting thread wakes up first for
+>> a (i) lock, (ii) semaphore, or (iii) condition variable?
+
+Using the list_max() function the waiter with the highest
+priority is selected and removed the list. The compare_priority_func()
+acts as the minimum function which is used to select the
+waiter with the higher priority.
+
+
+
+>> A4: (3 marks)
+>> Describe the sequence of events when a call to lock_acquire() causes a 
+>> priority donation. 
+>> How is nested donation handled?
+
+1) If the lock is held, do the following:
+	a) Add the thread's priority to the lock holder's priority list:
+		i)  If the holder's priority > the current thread's priority
+		    then keep the same priority.
+		ii) The current thread donates it's priority to the lock holder
+		    if it has a higher priority than it.
+	b) Signal that the thread is waiting on the lock's holder.
+2) Call sema_down which does the following:
+	a) Disable interrupts.
+	b) Adds the current thread to the semaphore's waiters list.
+	c) Blocks the thread until the sempahore value becomes positive.
+	d) Decrement the semphore value.
+	d) Revert to the original interrupts level before calling the function.
+3) Signal the thread is no longer waiting on the previous holder.
+4) Set the lock's current holder to the current thread.
+5) Add all the priorities of the waiters to the current thread's priority
+   list - this will set the priority of the current thread to the highest
+   priority in the list.
+   
+Step 5 describes the behaviour of nested donation; when the thread acquires
+the lock, it must now temporarily inherit the priorities of the threads
+waiting to acquire the lock to ensure priority inversion does not occur. As
+a result, the thread_insert_priority() function will select the highest priority
+each time a priority is added to the thread's priority list therefore ensuring
+that the thread is not interrupted.
+
+
+>> A5: (3 marks)
+>> Describe the sequence of events when lock_release() is called on a lock that 
+>> a higher-priority thread is waiting for.
+
+1) Ensure the current thread holds the lock (if not an assertion
+   error occurs).
+2) Remove all the waiters from the current thread's priority list
+   using the thread_remove_priority() function
+	a) This function will cause the priority of the current thread to
+	   either revert to its original value or the value of the highest
+	   priority in its priority list.
+3) Set the lock's holder to NULL
+4) Call sema_up which does the following:
+	a) Disable interrupts.
+	b) Increase the semaphore's value to 1. This now allows any waiters
+	   to acquire the lock.
+	c) Find the waiter (if any) with the highests priority and unblock it.
+	d) Revert to the original interrupts level before calling the function.
+
+
+
+---- SYNCHRONIZATION ----
+
+
+
+>> A6: (2 marks)
+>> How do you avoid a race condition in thread_set_priority() when a thread 
+>> needs to recompute its effective priority, but the donated priorities 
+>> potentially change during the computation?
+>> Can you use a lock to avoid the race?
+
+To avoid race conditions interrupts can be disabled ensuring that when
+the priority list is being updated, the thread will not be preempted by
+a higher priority thread. As a result, the thread will finish computing
+its new priority and once complete, it can recompute its new priority
+when the donated priorities change.
+
+
+
+---- RATIONALE ----
+
+
+
+>> A7: (3 marks) ***
+>> Why did you choose this design?  
+>> In what ways is it superior to another design you considered?
+
+This design removes the need to implement an ordered list structure
+and having to re-order the list each time a new priority is added.
+The provided list_max() function along with the compare_priority_func()
+helper function made this design simple, readable and straightforward.
+
+
+              ADVANCED SCHEDULER
+              ==================
+
+---- DATA STRUCTURES ----
+
+
+
+>> B1: (2 marks)
+>> Copy here the declaration of each new or changed `struct' or `struct' member,
+>> global or static variable, `typedef', or enumeration. 
+>> Identify the purpose of each in roughly 25 words.
+
+Added to thread struct (thread.h):
+
+int nice;                           /* Niceness of a thread. */
+int32_t recent_cpu;                 /* Recent CPU of a thread. */
+
+/* Stores the time when a thread must wake up and a semaphore to signal it */
+struct wake_signal 
+  {
+    int time;
+    struct semaphore semaphore;
+    struct list_elem elem;
+  };
+
+
+
+---- ALGORITHMS ----
+
+
+
+>> B2: (3 marks)
+>> Suppose threads A, B, and C have nice values 0, 1, and 2 and each has a 
+>> recent_cpu value of 0. 
+>> Fill in the table below showing the scheduling decision, the priority and the
+>> recent_cpu values for each thread after each given number of timer ticks:
+
+timer  recent_cpu    priority   thread
+ticks   A   B   C   A   B   C   to run
+-----  --  --  --  --  --  --   ------
+ 0		0   1   2  63  61  59    A 
+ 4      4   1   2  62  61  59    A
+ 8      7   2   4  61  61  58    B
+12      6   6   6  61  59  58    A
+16      9   6   7  60  59  57    A
+20     12   6   8  60  59  57    A
+24     15   6   9  59  59  57    B
+28     14  10  10  59  58  57    A
+32     16  10  11  58  58  56    B
+36     15  14  12  59  57  56    A
+
+
+
+>> B3: (2 marks) 
+>> Did any ambiguities in the scheduler specification make values in the table 
+>> uncertain? 
+>> If so, what rule did you use to resolve them?
+
+When recalculating recent_cpu, we have to take into account that
+whichever thread is currently running has to yield in order to compute
+the new value. As a result, each thread spends slightly less than
+4 ticks running. This causes a slight inaccuracy since when we add 1 to
+the recent_cpu each tick, we are assuming the thread is running the
+entire duration. Furthermore, as the priority is also dependent on the 
+recent_cpu, these values are also uncertain.
+
+---- RATIONALE ----
+
+>> B4: (3 marks) ***
+>> Briefly critique your design, pointing out advantages and disadvantages in 
+>> your design choices.
+
