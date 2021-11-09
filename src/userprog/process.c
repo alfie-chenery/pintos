@@ -70,6 +70,9 @@ process_execute (const char *file_name)
 
 /* A thread function that loads a user process and starts it
    running. */
+
+//somehow edit this code.
+
 static void
 start_process (void *file_name_)
 {
