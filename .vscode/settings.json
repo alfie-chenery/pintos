@@ -1,6 +1,10 @@
 {
+    "editor.rulers": [
+        80
+    ],
     "files.associations": {
-        "*.inc": "c"
-    },
-    "C_Cpp.errorSquiggles": "Enabled"
+        "debug.h": "c",
+        "syscall-nr.h": "c",
+        "console.h": "c"
+    }
 }
