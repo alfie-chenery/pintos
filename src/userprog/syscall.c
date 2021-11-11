@@ -1,12 +1,115 @@
-#include "userprog/syscall.h"
+#include "syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-#include <lib/user/syscall.h>
 #include "threads/synch.h"
-#include <console.c>
+#include <console.h>
 #include "process.h"
+#include "threads/vaddr.h"
+#include "devices/shutdown.h"
+#include "pagedir.h"
+
+// Get the n th argument from an interrupt frame
+#define GET_ARG(f, n) *((int32_t *) f->esp + n)
+
+static void 
+halt (struct intr_frame *f)
+{
+
+}
+
+static void 
+exit (struct intr_frame *f)
+{
+
+}
+
+static void 
+exec (struct intr_frame *f)
+{
+
+}
+
+void 
+wait (struct intr_frame *f)
+{
+
+}
+
+void 
+create (struct intr_frame *f)
+{
+
+}
+
+void 
+remove (struct intr_frame *f)
+{
+
+}
+
+void 
+open (struct intr_frame *f)
+{
+
+}
+
+void 
+filesize (struct intr_frame *f)
+{
+
+}
+
+void 
+read (struct intr_frame *f)
+{
+
+}
+
+void 
+write (struct intr_frame *f)
+{
+
+}
+
+void 
+seek (struct intr_frame *f)
+{
+
+}
+
+void 
+tell (struct intr_frame *f)
+{
+
+}
+
+void 
+close (struct intr_frame *f)
+{
+
+}
+
+// sys_func represents a system call function called by syscall_handler
+typedef void sys_func (struct intr_frame *);
+
+// Array mapping sys_func to the corresponsing system call numbers
+sys_func *sys_funcs[13] = {
+  halt,
+  exit,
+  exec,
+  wait,
+  create,
+  remove,
+  open,
+  filesize,
+  read,
+  write,
+  seek,
+  tell,
+  close
+};
 
 static void syscall_handler (struct intr_frame *);
 
@@ -20,7 +123,16 @@ static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
   printf ("system call!\n");
-  thread_exit ();
+  sys_funcs[GET_ARG (f, 0)] (f);
+}
+
+/*
+static void
+validate_user_memory (const void *user_memory)
+{
+  if (!is_user_vaddr (user_memory)
+      || pagedir_get_page (thread_current ()->pagedir, user_memory) == NULL)
+    exit (1);
 }
 
 void 
@@ -72,6 +184,9 @@ wait (pid_t pid)
 int 
 write (int fd, const void *buffer, unsigned length)
 {
+  // Also check end
+  validate_user_memory (buffer);
+
   if (fd == 1)
     {
       // Write to the console
@@ -82,7 +197,7 @@ write (int fd, const void *buffer, unsigned length)
   return -1;
 }
 
-/* bool create (const char *file, unsigned initial_size);
+ bool create (const char *file, unsigned initial_size);
 bool remove (const char *file);
 int open (const char *file);
 int filesize (int fd);
