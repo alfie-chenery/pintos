@@ -9,14 +9,41 @@
 #include "threads/vaddr.h"
 #include "devices/shutdown.h"
 #include "pagedir.h"
+#include "filesys/filesys.h"
 
-// Get the n th argument from an interrupt frame
-#define GET_ARG(f, n) *((int32_t *) f->esp + n)
+struct lock filesys_lock;         /* Lock for the filesystem */
+
+/* Acquire the lock for the filesystem */
+static void
+filesys_acquire (void)
+{
+  lock_acquire (&filesys_lock);
+}
+
+/* Releases the lock for the filesystem */
+static void
+filesys_release (void)
+{
+  lock_release (&filesys_lock);
+}
+
+/* Validates a pointer passed by user */
+static void
+validate_user_pointer (const void *user_pointer)
+{
+  // Check end of buffer and string too
+  if (!is_user_vaddr (user_pointer)
+      || pagedir_get_page (thread_current ()->pagedir, user_pointer) == NULL)
+    PANIC ("Invalid user memory");
+}
+
+/* Get the n th argument from an interrupt frame */
+#define GET_ARG(f, n) ((int32_t *) f->esp + n)
 
 static void 
 halt (struct intr_frame *f)
 {
-
+  shutdown_power_off ();
 }
 
 static void 
@@ -31,61 +58,70 @@ exec (struct intr_frame *f)
 
 }
 
-void 
+static void 
 wait (struct intr_frame *f)
 {
 
 }
 
-void 
+static void
 create (struct intr_frame *f)
 {
+  const char *file = (char *) GET_ARG (f, 1);
+  unsigned initial_size = *GET_ARG (f, 2);
 
+  filesys_acquire ();
+  f->eax = filesys_create (file, initial_size);
+  filesys_release ();
 }
 
-void 
+static void 
 remove (struct intr_frame *f)
 {
 
 }
 
-void 
+static void 
 open (struct intr_frame *f)
 {
-
+   
 }
 
-void 
+static void 
 filesize (struct intr_frame *f)
 {
 
 }
 
-void 
+static void 
 read (struct intr_frame *f)
 {
 
 }
 
-void 
+static void 
 write (struct intr_frame *f)
 {
+  int fd = *GET_ARG (f, 1);
+  const void *buffer = (void *) GET_ARG (f, 2);
+  unsigned size = *GET_ARG (f, 3);
 
+  validate_user_pointer (buffer);
 }
 
-void 
+static void 
 seek (struct intr_frame *f)
 {
 
 }
 
-void 
+static void
 tell (struct intr_frame *f)
 {
 
 }
 
-void 
+static void
 close (struct intr_frame *f)
 {
 
@@ -120,10 +156,10 @@ syscall_init (void)
 }
 
 static void
-syscall_handler (struct intr_frame *f UNUSED) 
+syscall_handler (struct intr_frame *f) 
 {
   printf ("system call!\n");
-  sys_funcs[GET_ARG (f, 0)] (f);
+  sys_funcs[*GET_ARG (f, 0)] (f);
 }
 
 /*
