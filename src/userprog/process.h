@@ -5,6 +5,7 @@
 #include <list.h>
 #include "user/syscall.h"
 
+/* Struct to store user processes and their exit codes. */
 struct pid_elem
 {
     pid_t pid;
@@ -19,5 +20,6 @@ void process_exit (void);
 void process_activate (void);
 
 struct list user_processes;
+struct lock user_processes_lock;
 
 #endif /* userprog/process.h */

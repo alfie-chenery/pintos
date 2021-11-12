@@ -211,6 +211,13 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
+#ifdef USERPROG
+  /* Set parent process and initialize list of fds. */
+  list_init (&t->fds);
+  t->parent = thread_current ();
+  t->next_fd = 2;
+#endif
+
   intr_set_level (old_level);
 
   /* Add to run queue. */

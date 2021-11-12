@@ -10,6 +10,7 @@
 #include "devices/shutdown.h"
 #include "pagedir.h"
 #include "filesys/filesys.h"
+#include "filesys/file.h"
 
 struct lock filesys_lock;         /* Lock for the filesystem */
 
@@ -58,6 +59,25 @@ validate_user_string (const char *string)
     }
 }
 
+/* Returns a file pointer from a file descriptor. */
+static struct file *
+file_from_fd (int fd)
+{
+  // Iterate through thread's fds and find the correct one.
+  struct thread *t = thread_current ();
+  for (struct list_elem *elem = list_begin (&t->fds);
+       elem != list_end (&t->fds);
+       elem = list_next (elem))
+    {
+      struct fd_elem *fd_elem = list_entry (elem, struct fd_elem, elem);
+      if (fd_elem->fd == fd)
+        return fd_elem->file;
+    }
+  
+  // Incorrect fd has been passed.
+  return NULL;
+}
+
 /* Get the n th argument from an interrupt frame */
 #define GET_ARG(f, n) ((int32_t *) f->esp + n)
 
@@ -72,7 +92,9 @@ static void
 exit_util (int status)
 {
   bool is_user_process = false;
+  lock_acquire (&user_processes_lock);
 
+  // Find the user process in the list of all processes
   for (struct list_elem *elem = list_begin (&user_processes);
        elem != list_end (&user_processes);
        elem = list_next (elem))
@@ -85,6 +107,7 @@ exit_util (int status)
         }
     }
 
+  lock_release (&user_processes_lock);
   ASSERT (is_user_process);
   printf ("%s: exit(%d)", thread_name (), status);
   thread_exit ();
@@ -130,13 +153,43 @@ remove (struct intr_frame *f)
 static void 
 open (struct intr_frame *f)
 {
-   
+  const char *file = (char *) GET_ARG (f, 1);
+  validate_user_string (file);
+
+  filesys_acquire ();
+  struct file *f = filesys_open (file);
+  filesys_release ();
+
+  if (f == NULL)
+    {
+      // Could not open file.
+      f->eax = -1;
+      return;
+    }
+
+  // Add current file to the thread's list of fds
+  struct fd_elem fd;
+  fd.fd = thread_current ()->next_fd;
+  fd.file = f;
+  list_push_back (&thread_current ()->fds, &fd.elem);
+  f->eax = thread_current ()->next_fd++;
 }
 
 static void 
 filesize (struct intr_frame *f)
 {
+  int fd = *GET_ARG (f, 1);
+  struct file *file = file_from_fd (fd);
 
+  if (file == NULL)
+    {
+      // Invalid fd
+      exit_util (1);
+    }
+
+  filesys_acquire ();
+  f->eax = file_length (file);
+  filesys_release ();
 }
 
 static void 
@@ -199,6 +252,7 @@ void
 syscall_init (void) 
 {
   lock_init (&filesys_lock);
+  lock_init (&user_processes_lock);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 

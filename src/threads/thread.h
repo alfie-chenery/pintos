@@ -5,6 +5,11 @@
 #include <list.h>
 #include <stdint.h>
 
+#define USERPROG
+#ifdef USERPROG
+#include "filesys/file.h"
+#endif
+
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -13,6 +18,16 @@ enum thread_status
     THREAD_BLOCKED,     /* Waiting for an event to trigger. */
     THREAD_DYING        /* About to be destroyed. */
   };
+
+#ifdef USERPROG
+/* Struct to store file descriptors and file pointers. */
+struct fd_elem
+   {
+      int fd;                 /* File descriptor. */
+      struct file *file;      /* The corresponding file pointer. */
+      struct list_elem elem;  /* Elem to create a list. */
+   };
+#endif
 
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
@@ -96,6 +111,9 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    struct list fds;                    /* File descriptors. */
+    struct thread *parent;              /* The parent thread. */
+    int next_fd;                        /* An unused file descriptor number. */
 #endif
 
     /* Owned by thread.c. */
