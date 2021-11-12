@@ -144,7 +144,7 @@ start_process(void *file_name_)
      and jump to it. */
     asm volatile("movl %0, %%esp; jmp intr_exit"
                  :
-                 : "g"(&if_)
+                 : "g"(&intrf)
                  : "memory");
   NOT_REACHED();
 }
