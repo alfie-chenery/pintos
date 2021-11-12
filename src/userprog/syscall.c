@@ -16,7 +16,7 @@
 static void 
 halt (struct intr_frame *f)
 {
-
+  
 }
 
 static void 

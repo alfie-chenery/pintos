@@ -6,5 +6,6 @@
         "debug.h": "c",
         "syscall-nr.h": "c",
         "console.h": "c"
-    }
+    },
+    "C_Cpp.errorSquiggles": "Disabled"
 }
