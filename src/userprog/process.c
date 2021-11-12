@@ -44,21 +44,19 @@ process_execute (const char *file_name)
   // tokenise file name into command and parameters
   char *token;
   char *save_ptr;
-  char *args[MAX_COMMAND_LINE_PARAMS];
-  ASSERT(fn_copy != NULL);
-  ASSERT(file_name != NULL);
-  ASSERT(sizeof(argv) != 0);
+  char *argv[MAX_COMMAND_LINE_PARAMS];
+  ASSERT (fn_copy != NULL);
+  ASSERT (file_name != NULL);
+  ASSERT (sizeof(argv) != 0);
 
-  /* delimter used to tokenise the string */
-  char separator = " ";
   int total_args_length = 0;
   int argc = 0;
-  for (token = strtok_r(fn_copy, separator, &save_ptr);
-       token != NULL; token = strtok_r(NULL, separator, &save_ptr))
+  for (token = strtok_r (fn_copy, " ", &save_ptr);
+       token != NULL; token = strtok_r (NULL, " ", &save_ptr))
   {
-    int curr_arg_len = (int) strlen(token);
+    int curr_arg_len = (int) strlen (token);
     /* remove magic number, declare constant MAX_PAGE_SIZE */
-    if(curr_arg_len + total_args_length > 4096) {
+    if (curr_arg_len + total_args_length > 4096) {
       break;
     }
     argv[argc] = token;
@@ -67,9 +65,10 @@ process_execute (const char *file_name)
     total_args_length += curr_arg_len;
   }
 
-    /* Create a new thread to execute FILE_NAME, passing arguments from array to 
+    /* Create a new thread to execute FILE_NAME, passing arguments from array to
   aux */
-    tid = thread_create(argv[0], PRI_DEFAULT, start_process, argv);
+    //pass only parameters to aux, not command itself, so +1 to pointer
+    tid = thread_create(argv[0], PRI_DEFAULT, start_process, argv + 1);
     if (tid == TID_ERROR)
       palloc_free_page(fn_copy);
     return tid;
@@ -83,18 +82,18 @@ start_process(void *file_name_)
 {
   char **argv = file_name_;
   ASSERT(argv != NULL);
-  struct intr_frame if_;
+  struct intr_frame intrf;
   bool success;
 
   /* Initialize interrupt frame and load executable. */
-  memset(&if_, 0, sizeof if_);
-  if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
-  if_.cs = SEL_UCSEG;
-  if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load(file_name[0], &if_.eip, &if_.esp);
+  memset(&intrf, 0, sizeof intrf);
+  intrf.gs = intrf.fs = intrf.es = intrf.ds = intrf.ss = SEL_UDSEG;
+  intrf.cs = SEL_UCSEG;
+  intrf.eflags = FLAG_IF | FLAG_MBS;
+  success = load(argv[0], &intrf.eip, &intrf.esp);
 
   /* If load failed, quit. */
-  palloc_free_page(file_name[0]);
+  palloc_free_page(argv[0]);
   if (!success)
     thread_exit();
 
@@ -109,33 +108,33 @@ start_process(void *file_name_)
     /* reverse order argument traversal */
     char *curr_arg = argv[i];
     size_t arg_size = strlen(curr_arg) + 1;
-    
+
     /* copying the contents of the string onto the stack */
-    if_.esp -= arg_size;
-    strlcpy(if_.esp, curr_arg, arg_size);
+    intrf.esp -= arg_size;
+    strlcpy(intrf.esp, curr_arg, arg_size);
     /* setting the stack address of the string in the argument vector */
-    argv[i] = if_.esp;
+    argv[i] = intrf.esp;
   }
   
   /* rounding down the stack pointer to multiple of 4 for alignment */
-  if_.esp -= (unsigned) if_.esp % 4;
+  intrf.esp -= (unsigned) intrf.esp % 4;
   /* pushing the 0 uint8_t value onto the stack */
-  if_.esp -= size_of(uint8_t *);
-  *((uint8_t) *if_.esp) = uint8_t 0;
+  intrf.esp -= size_of(uint8_t *);
+  *((uint8_t) *intrf.esp) = uint8_t 0;
   /* pushing the argument vector adresses onto the stack */
   for (int i = argc - 1; i > -1; i--) {
-    if_.esp -= size_of(char *);
-    *((char) *if_.esp) = argv[i];
+    intrf.esp -= size_of(char *);
+    *((char) *intrf.esp) = argv[i];
   }
   /* push argv onto the stack */
-  if_.esp -= size_of(char **);
-  *((char) **if_.esp) = argv;
+  intrf.esp -= size_of(char **);
+  *((char) **intrf.esp) = argv;
   /* push argc onto the stack */
-  if_.esp -= 4;
-  *((int *) if_.esp) = argc;
+  intrf.esp -= 4;
+  *((int *) intrf.esp) = argc;
   /* pushing the null void pointer onto the stack */
-  if_.esp -= sizeof(void (**)(void));
-  *((void (**)(void)) if_.esp) = NULL;
+  intrf.esp -= sizeof(void (**)(void));
+  *((void (**)(void)) intrf.esp) = NULL;
 
     /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
