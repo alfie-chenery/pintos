@@ -9,20 +9,92 @@
 #include "threads/vaddr.h"
 #include "devices/shutdown.h"
 #include "pagedir.h"
+#include "filesys/filesys.h"
 
-// Get the n th argument from an interrupt frame
-#define GET_ARG(f, n) *((int32_t *) f->esp + n)
+struct lock filesys_lock;         /* Lock for the filesystem */
+
+/* Acquire the lock for the filesystem */
+static void
+filesys_acquire (void)
+{
+  lock_acquire (&filesys_lock);
+}
+
+/* Releases the lock for the filesystem */
+static void
+filesys_release (void)
+{
+  lock_release (&filesys_lock);
+}
+
+static void exit_util (int);
+
+/* Validates a pointer to a buffer passed by a user */
+static void
+validate_user_buffer (const void *buffer, unsigned size) 
+{
+  for (unsigned i = 0; i < size; i++, buffer++)
+    {
+      if (!is_user_vaddr (buffer)
+          || pagedir_get_page (thread_current ()->pagedir, buffer) == NULL)
+        exit_util (1);
+    }
+}
+
+/* Validates a string passed by a user */
+static void
+validate_user_string (const char *string)
+{
+  for (;;)
+    {
+      if (!is_user_vaddr (string)
+          || pagedir_get_page (thread_current ()->pagedir, string) == NULL)
+        exit_util (1);
+
+      if (*string == '\0')
+        return;
+
+      string++;
+    }
+}
+
+/* Get the n th argument from an interrupt frame */
+#define GET_ARG(f, n) ((int32_t *) f->esp + n)
 
 static void 
 halt (struct intr_frame *f)
 {
-  
+  shutdown_power_off ();
+}
+
+/* Terminates a user process and prints exit code to standard output. */
+static void
+exit_util (int status)
+{
+  bool is_user_process = false;
+
+  for (struct list_elem *elem = list_begin (&user_processes);
+       elem != list_end (&user_processes);
+       elem = list_next (elem))
+    {
+      struct pid_elem *p = list_entry (elem, struct pid_elem, elem);
+      if (p->t == thread_current ())
+        {
+          is_user_process = true;
+          p->exit_code = status;
+        }
+    }
+
+  ASSERT (is_user_process);
+  printf ("%s: exit(%d)", thread_name (), status);
+  thread_exit ();
 }
 
 static void 
 exit (struct intr_frame *f)
 {
-
+  int status = *GET_ARG (f, 1);
+  exit_util (status);
 }
 
 static void 
@@ -31,61 +103,71 @@ exec (struct intr_frame *f)
 
 }
 
-void 
+static void 
 wait (struct intr_frame *f)
 {
 
 }
 
-void 
+static void
 create (struct intr_frame *f)
 {
+  const char *file = (char *) GET_ARG (f, 1);
+  unsigned initial_size = *GET_ARG (f, 2);
+  validate_user_string (file);
 
+  filesys_acquire ();
+  f->eax = filesys_create (file, initial_size);
+  filesys_release ();
 }
 
-void 
+static void 
 remove (struct intr_frame *f)
 {
 
 }
 
-void 
+static void 
 open (struct intr_frame *f)
 {
-
+   
 }
 
-void 
+static void 
 filesize (struct intr_frame *f)
 {
 
 }
 
-void 
+static void 
 read (struct intr_frame *f)
 {
 
 }
 
-void 
+static void 
 write (struct intr_frame *f)
 {
+  int fd = *GET_ARG (f, 1);
+  const void *buffer = (void *) GET_ARG (f, 2);
+  unsigned size = *GET_ARG (f, 3);
 
+  validate_user_buffer (buffer, size);
 }
 
-void 
+static void 
 seek (struct intr_frame *f)
 {
 
 }
 
-void 
+static void
 tell (struct intr_frame *f)
 {
 
 }
 
-void 
+static void
 close (struct intr_frame *f)
 {
 
@@ -116,14 +198,15 @@ static void syscall_handler (struct intr_frame *);
 void
 syscall_init (void) 
 {
+  lock_init (&filesys_lock);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
 static void
-syscall_handler (struct intr_frame *f UNUSED) 
+syscall_handler (struct intr_frame *f) 
 {
   printf ("system call!\n");
-  sys_funcs[GET_ARG (f, 0)] (f);
+  sys_funcs[*GET_ARG (f, 0)] (f);
 }
 
 /*

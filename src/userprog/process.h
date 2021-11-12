@@ -3,11 +3,13 @@
 
 #include "threads/thread.h"
 #include <list.h>
+#include "user/syscall.h"
 
-struct process_id 
+struct pid_elem
 {
-    tid_t pid;
-    struct thread* thread;
+    pid_t pid;
+    struct thread *t;
+    int exit_code;
     struct list_elem elem;
 };
 
@@ -16,6 +18,6 @@ int process_wait (tid_t);
 void process_exit (void);
 void process_activate (void);
 
-struct list userprog_ids;
+struct list user_processes;
 
 #endif /* userprog/process.h */
