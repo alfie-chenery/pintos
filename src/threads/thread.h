@@ -5,7 +5,6 @@
 #include <list.h>
 #include <stdint.h>
 
-#define USERPROG
 #ifdef USERPROG
 #include "filesys/file.h"
 #endif

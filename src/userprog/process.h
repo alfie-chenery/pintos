@@ -2,6 +2,7 @@
 #define USERPROG_PROCESS_H
 
 #include "threads/thread.h"
+#include "threads/synch.h"
 #include <list.h>
 #include "user/syscall.h"
 
