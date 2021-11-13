@@ -1,5 +1,6 @@
 #include "userprog/process.h"
 #include <debug.h>
+#include "threads/malloc.h"
 #include <inttypes.h>
 #include <round.h>
 #include <stdio.h>
@@ -61,14 +62,16 @@ tid_t process_execute(const char *file_name)
     int curr_arg_len = (int)strlen(token);
     /* if total_args_length ever crosses 4Kb, immediately break */
     /* remove magic number, declare constant MAX_PAGE_SIZE */
+    // argv[argc] = malloc(curr_arg_len + 1);
     argv[argc] = token;
+    // strlcpy(argv[argc], token, curr_arg_len + 1);
     argc++;
     total_args_length += curr_arg_len;
   }
+  argv[argc] = NULL;
 
   /* Create a new thread to execute FILE_NAME, passing arguments from array to
   aux */
-  //pass only parameters to aux, not command itself, so +1 to pointer
   tid = thread_create(argv[0], PRI_DEFAULT, start_process, argv);
   if (tid == TID_ERROR)
     palloc_free_page(fn_copy);
@@ -94,7 +97,6 @@ start_process(void *command_information)
   success = load(argv[0], &intrf.eip, &intrf.esp);
 
   /* If load failed, quit. */
-  palloc_free_page(argv[0]);
   if (!success)
     thread_exit();
 
@@ -111,33 +113,51 @@ start_process(void *command_information)
   {
     /* reverse order argument traversal */
     char *curr_arg = argv[i];
+    ASSERT(curr_arg != NULL);
 
     /* copying the contents of the string onto the stack */
+    /* printf("pushing arguments onto stack\n"); */
     intrf.esp -= strlen(curr_arg) + 1;
-    strlcpy(intrf.esp, curr_arg, strlen(curr_arg) + 1);
+    /* printf("the stack is now at %p\n", intrf.esp); */
+    strlcpy((char *)intrf.esp, curr_arg, strlen(curr_arg) + 1);
     /* setting the stack address of the string in the argument vector */
     argv[i] = intrf.esp;
+    /* printf("address of string %i is: %p\n", i, argv[i]); */
+    /* printf("the stack pointer points to %p\n", (char *)intrf.esp); */
   }
+  /* printf("argument pushing done\n"); */
+
   /* rounding down the stack pointer to multiple of 4 for alignment  */
   intrf.esp -= (uintptr_t)intrf.esp % 4;
+  /* printf("current stack adress after aligning: %p\n", intrf.esp); */
   /* pushing the 0 uint8_t value onto the stack  */
-  intrf.esp -= sizeof(uint8_t);
-  *(uint8_t *)intrf.esp = (uint8_t)0;
+  intrf.esp -= sizeof(int);
+  *(uint8_t *)intrf.esp = 0;
+  /* printf("current stack adress after pushing null sentinel: %p\n", intrf.esp); */
   /* pushing the argument vector adresses onto the stack  */
   for (int i = argc - 1; i > -1; i--)
   {
     intrf.esp -= sizeof(char *);
-    *(char *)intrf.esp = argv[i];
+    *(char **)intrf.esp = argv[i];
+    /* printf(
+      "current stack pointer is at: %p for index %i and holds address %p\n", 
+      intrf.esp, i, *(char **)intrf.esp); */
   }
   /* push argv onto the stack  */
   intrf.esp -= sizeof(char **);
-  *(char **)intrf.esp = argv;
+  *(char ***)intrf.esp = argv;
+  /* printf("stack pointer is at %p\n", intrf.esp); */
+  /* printf("the stack points to %p\n", *(char ***)intrf.esp); */
   /* push argc onto the stack  */
   intrf.esp -= sizeof(int);
   *(int *)intrf.esp = argc;
+  /* printf("stack pointer is at %p\n", intrf.esp); */
+  /* printf("the stack points to %d\n", *(int *)intrf.esp); */
   /* pushing the sentinel void pointer onto the stack */
   intrf.esp -= sizeof(void **);
-  *((void **)intrf.esp) = 0;
+  *(void **)intrf.esp = 0;
+  /* printf("stack pointer is at %p\n", intrf.esp); */
+  /* printf("the stack points to %p\n", *(void **)intrf.esp); */
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -163,7 +183,8 @@ start_process(void *command_information)
  * For now, it does nothing. */
 int process_wait(tid_t child_tid UNUSED)
 {
-  return -1;
+  for (;;)
+    ;
 }
 
 /* Free the current process's resources. */
