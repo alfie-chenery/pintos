@@ -158,6 +158,7 @@ start_process(void *command_information)
   *(void **)intrf.esp = 0;
   /* printf("stack pointer is at %p\n", intrf.esp); */
   /* printf("the stack points to %p\n", *(void **)intrf.esp); */
+  // TODO: Remove printf comments from stack setup.
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
