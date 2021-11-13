@@ -22,14 +22,13 @@
 #define MAX_COMMAND_LINE_PARAMS 128
 
 static thread_func start_process NO_RETURN;
-static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static bool load(const char *cmdline, void (**eip)(void), void **esp);
 
 /* Starts a new thread running a user program loaded from
    FILENAME. The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
-tid_t
-process_execute (const char *file_name) 
+tid_t process_execute(const char *file_name)
 {
   char *fn_copy;
   tid_t tid;
@@ -44,43 +43,45 @@ process_execute (const char *file_name)
   // tokenise file name into command and parameters
   char *token;
   char *save_ptr;
+  /* argument vector to mantain arguments to command */
   char *argv[MAX_COMMAND_LINE_PARAMS];
-  ASSERT (fn_copy != NULL);
-  ASSERT (file_name != NULL);
-  ASSERT (sizeof(argv) != 0);
+  ASSERT(fn_copy != NULL);
+  ASSERT(file_name != NULL);
+  ASSERT(argv != NULL);
 
+  /* parsing the arguments */
+
+  /* total argument length to ensure they do not cross page limit */
   int total_args_length = 0;
+  /* argument count */
   int argc = 0;
-  for (token = strtok_r (fn_copy, " ", &save_ptr);
-       token != NULL; token = strtok_r (NULL, " ", &save_ptr))
+  for (token = strtok_r(fn_copy, " ", &save_ptr);
+       token != NULL; token = strtok_r(NULL, " ", &save_ptr))
   {
-    int curr_arg_len = (int) strlen (token);
+    int curr_arg_len = (int)strlen(token);
+    /* if total_args_length ever crosses 4Kb, immediately break */
     /* remove magic number, declare constant MAX_PAGE_SIZE */
-    if (curr_arg_len + total_args_length > 4096) {
-      break;
-    }
     argv[argc] = token;
     argc++;
-    /* if this ever crosses 4Kb, immediately break */
     total_args_length += curr_arg_len;
   }
 
-    /* Create a new thread to execute FILE_NAME, passing arguments from array to
+  /* Create a new thread to execute FILE_NAME, passing arguments from array to
   aux */
-    //pass only parameters to aux, not command itself, so +1 to pointer
-    tid = thread_create(argv[0], PRI_DEFAULT, start_process, argv + 1);
-    if (tid == TID_ERROR)
-      palloc_free_page(fn_copy);
-    return tid;
+  //pass only parameters to aux, not command itself, so +1 to pointer
+  tid = thread_create(argv[0], PRI_DEFAULT, start_process, argv);
+  if (tid == TID_ERROR)
+    palloc_free_page(fn_copy);
+  return tid;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
 
 static void
-start_process(void *file_name_)
+start_process(void *command_information)
 {
-  char **argv = file_name_;
+  char **argv = command_information;
   ASSERT(argv != NULL);
   struct intr_frame intrf;
   bool success;
@@ -97,55 +98,57 @@ start_process(void *file_name_)
   if (!success)
     thread_exit();
 
+  /* store number of arguments in argument counter */
   int argc = 0;
-  while (argv[argc] != NULL) {
+  while (argv[argc] != NULL)
+  {
     argc++;
   }
 
   /* setting up the stack */
   /* pushing the strings in reverse order onto the stack */
-  for (int i = argc - 1; i > -1; i--) {
+  for (int i = argc - 1; i > -1; i--)
+  {
     /* reverse order argument traversal */
     char *curr_arg = argv[i];
-    size_t arg_size = strlen(curr_arg) + 1;
 
     /* copying the contents of the string onto the stack */
-    intrf.esp -= arg_size;
-    strlcpy(intrf.esp, curr_arg, arg_size);
+    intrf.esp -= strlen(curr_arg) + 1;
+    strlcpy(intrf.esp, curr_arg, strlen(curr_arg) + 1);
     /* setting the stack address of the string in the argument vector */
     argv[i] = intrf.esp;
   }
-  
-  /* rounding down the stack pointer to multiple of 4 for alignment */
-  intrf.esp -= (unsigned) intrf.esp % 4;
-  /* pushing the 0 uint8_t value onto the stack */
-  intrf.esp -= size_of(uint8_t *);
-  *((uint8_t) *intrf.esp) = uint8_t 0;
-  /* pushing the argument vector adresses onto the stack */
-  for (int i = argc - 1; i > -1; i--) {
-    intrf.esp -= size_of(char *);
-    *((char) *intrf.esp) = argv[i];
+  /* rounding down the stack pointer to multiple of 4 for alignment  */
+  intrf.esp -= (uintptr_t)intrf.esp % 4;
+  /* pushing the 0 uint8_t value onto the stack  */
+  intrf.esp -= sizeof(uint8_t);
+  *(uint8_t *)intrf.esp = (uint8_t)0;
+  /* pushing the argument vector adresses onto the stack  */
+  for (int i = argc - 1; i > -1; i--)
+  {
+    intrf.esp -= sizeof(char *);
+    *(char *)intrf.esp = argv[i];
   }
-  /* push argv onto the stack */
-  intrf.esp -= size_of(char **);
-  *((char) **intrf.esp) = argv;
-  /* push argc onto the stack */
-  intrf.esp -= 4;
-  *((int *) intrf.esp) = argc;
-  /* pushing the null void pointer onto the stack */
-  intrf.esp -= sizeof(void (**)(void));
-  *((void (**)(void)) intrf.esp) = NULL;
+  /* push argv onto the stack  */
+  intrf.esp -= sizeof(char **);
+  *(char **)intrf.esp = argv;
+  /* push argc onto the stack  */
+  intrf.esp -= sizeof(int);
+  *(int *)intrf.esp = argc;
+  /* pushing the sentinel void pointer onto the stack */
+  intrf.esp -= sizeof(void **);
+  *((void **)intrf.esp) = 0;
 
-    /* Start the user process by simulating a return from an
+  /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
      arguments on the stack in the form of a `struct intr_frame',
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
-    asm volatile("movl %0, %%esp; jmp intr_exit"
-                 :
-                 : "g"(&intrf)
-                 : "memory");
+  asm volatile("movl %0, %%esp; jmp intr_exit"
+               :
+               : "g"(&intrf)
+               : "memory");
   NOT_REACHED();
 }
 
