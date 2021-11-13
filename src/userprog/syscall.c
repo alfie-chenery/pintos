@@ -4,13 +4,14 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/synch.h"
-#include <console.h>
 #include "process.h"
 #include "threads/vaddr.h"
 #include "devices/shutdown.h"
 #include "pagedir.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+
+#define KILLED -1                 /* Exit code when user process is killed. */
 
 struct lock filesys_lock;         /* Lock for the filesystem */
 
@@ -38,7 +39,7 @@ validate_user_buffer (const void *buffer, unsigned size)
     {
       if (!is_user_vaddr (buffer)
           || pagedir_get_page (thread_current ()->pagedir, buffer) == NULL)
-        exit_util (1);
+        exit_util (KILLED);
     }
 }
 
@@ -50,7 +51,7 @@ validate_user_string (const char *string)
     {
       if (!is_user_vaddr (string)
           || pagedir_get_page (thread_current ()->pagedir, string) == NULL)
-        exit_util (1);
+        exit_util (KILLED);
 
       if (*string == '\0')
         return;
@@ -75,7 +76,8 @@ file_from_fd (int fd)
     }
   
   // Incorrect fd has been passed.
-  return NULL;
+  exit_util (KILLED);
+  NOT_REACHED ();
 }
 
 /* Get the n th argument from an interrupt frame */
@@ -113,7 +115,7 @@ exit_util (int status)
   thread_exit ();
 }
 
-static void 
+ static void 
 exit_h (struct intr_frame *f)
 {
   int status = *GET_ARG (f, 1);
@@ -157,7 +159,7 @@ open_h (struct intr_frame *f)
   validate_user_string (name);
 
   filesys_acquire ();
-  struct file *file = filesys_open (file);
+  struct file *file = filesys_open (name);
   filesys_release ();
 
   if (file == NULL)
@@ -170,7 +172,7 @@ open_h (struct intr_frame *f)
   // Add current file to the thread's list of fds
   struct fd_elem fd;
   fd.fd = thread_current ()->next_fd;
-  fd.file = f;
+  fd.file = file;
   list_push_back (&thread_current ()->fds, &fd.elem);
   f->eax = thread_current ()->next_fd++;
 }
@@ -180,12 +182,6 @@ filesize_h (struct intr_frame *f)
 {
   int fd = *GET_ARG (f, 1);
   struct file *file = file_from_fd (fd);
-
-  if (file == NULL)
-    {
-      // Invalid fd
-      exit_util (1);
-    }
 
   filesys_acquire ();
   f->eax = file_length (file);
@@ -206,18 +202,35 @@ write_h (struct intr_frame *f)
   unsigned size = *GET_ARG (f, 3);
 
   validate_user_buffer (buffer, size);
+
+  if (fd == 1)
+    {
+      putbuf (buffer, size);
+      f->eax = size;
+    }
 }
 
 static void 
 seek_h (struct intr_frame *f)
 {
+  int fd = *GET_ARG (f, 1);
+  unsigned position = *GET_ARG (f, 2);
+  struct file *file = file_from_fd (fd);
 
+  filesys_acquire ();
+  file_seek (file, position);
+  filesys_release ();
 }
 
 static void
 tell_h (struct intr_frame *f)
 {
+  int fd = *GET_ARG (f, 1);
+  struct file *file = file_from_fd (fd);
 
+  filesys_acquire ();
+  f->eax = file_tell (file);
+  filesys_release ();
 }
 
 static void
