@@ -82,7 +82,7 @@ file_from_fd (int fd)
 #define GET_ARG(f, n) ((int32_t *) f->esp + n)
 
 static void 
-halt (struct intr_frame *f)
+halt_h (struct intr_frame *f)
 {
   shutdown_power_off ();
 }
@@ -114,26 +114,26 @@ exit_util (int status)
 }
 
 static void 
-exit (struct intr_frame *f)
+exit_h (struct intr_frame *f)
 {
   int status = *GET_ARG (f, 1);
   exit_util (status);
 }
 
 static void 
-exec (struct intr_frame *f)
+exec_h (struct intr_frame *f)
 {
 
 }
 
 static void 
-wait (struct intr_frame *f)
+wait_h (struct intr_frame *f)
 {
 
 }
 
 static void
-create (struct intr_frame *f)
+create_h (struct intr_frame *f)
 {
   const char *file = (char *) GET_ARG (f, 1);
   unsigned initial_size = *GET_ARG (f, 2);
@@ -145,22 +145,22 @@ create (struct intr_frame *f)
 }
 
 static void 
-remove (struct intr_frame *f)
+remove_h (struct intr_frame *f)
 {
 
 }
 
 static void 
-open (struct intr_frame *f)
+open_h (struct intr_frame *f)
 {
-  const char *file = (char *) GET_ARG (f, 1);
-  validate_user_string (file);
+  const char *name = (char *) GET_ARG (f, 1);
+  validate_user_string (name);
 
   filesys_acquire ();
-  struct file *f = filesys_open (file);
+  struct file *file = filesys_open (file);
   filesys_release ();
 
-  if (f == NULL)
+  if (file == NULL)
     {
       // Could not open file.
       f->eax = -1;
@@ -176,7 +176,7 @@ open (struct intr_frame *f)
 }
 
 static void 
-filesize (struct intr_frame *f)
+filesize_h (struct intr_frame *f)
 {
   int fd = *GET_ARG (f, 1);
   struct file *file = file_from_fd (fd);
@@ -193,13 +193,13 @@ filesize (struct intr_frame *f)
 }
 
 static void 
-read (struct intr_frame *f)
+read_h (struct intr_frame *f)
 {
 
 }
 
 static void 
-write (struct intr_frame *f)
+write_h (struct intr_frame *f)
 {
   int fd = *GET_ARG (f, 1);
   const void *buffer = (void *) GET_ARG (f, 2);
@@ -209,19 +209,19 @@ write (struct intr_frame *f)
 }
 
 static void 
-seek (struct intr_frame *f)
+seek_h (struct intr_frame *f)
 {
 
 }
 
 static void
-tell (struct intr_frame *f)
+tell_h (struct intr_frame *f)
 {
 
 }
 
 static void
-close (struct intr_frame *f)
+close_h (struct intr_frame *f)
 {
 
 }
@@ -231,19 +231,19 @@ typedef void sys_func (struct intr_frame *);
 
 // Array mapping sys_func to the corresponsing system call numbers
 sys_func *sys_funcs[13] = {
-  halt,
-  exit,
-  exec,
-  wait,
-  create,
-  remove,
-  open,
-  filesize,
-  read,
-  write,
-  seek,
-  tell,
-  close
+  halt_h,
+  exit_h,
+  exec_h,
+  wait_h,
+  create_h,
+  remove_h,
+  open_h,
+  filesize_h,
+  read_h,
+  write_h,
+  seek_h,
+  tell_h,
+  close_h
 };
 
 static void syscall_handler (struct intr_frame *);
