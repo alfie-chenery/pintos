@@ -101,21 +101,23 @@ exit_util (int status)
        elem != list_end (&user_processes);
        elem = list_next (elem))
     {
-      struct pid_elem *p = list_entry (elem, struct pid_elem, elem);
-      if (p->t == thread_current ())
+      struct user_elem *p = list_entry (elem, struct user_elem, elem);
+      if (p->tid == thread_current ()->tid)
         {
+          // Set the exit code and up the semaphore
           is_user_process = true;
           p->exit_code = status;
+          sema_up (&p->s);
         }
     }
 
   lock_release (&user_processes_lock);
-  ASSERT (is_user_process);
-  printf ("%s: exit(%d)", thread_name (), status);
+  if (is_user_process)
+    printf ("%s: exit(%d)", thread_name (), status);
   thread_exit ();
 }
 
- static void 
+static void 
 exit_h (struct intr_frame *f)
 {
   int status = *GET_ARG (f, 1);
@@ -137,7 +139,7 @@ wait_h (struct intr_frame *f)
 static void
 create_h (struct intr_frame *f)
 {
-  const char *file = (char *) GET_ARG (f, 1);
+  const char *file = *(char **) GET_ARG (f, 1);
   unsigned initial_size = *GET_ARG (f, 2);
   validate_user_string (file);
 
@@ -155,7 +157,7 @@ remove_h (struct intr_frame *f)
 static void 
 open_h (struct intr_frame *f)
 {
-  const char *name = (char *) GET_ARG (f, 1);
+  const char *name = *(char **) GET_ARG (f, 1);
   validate_user_string (name);
 
   filesys_acquire ();
@@ -198,7 +200,7 @@ static void
 write_h (struct intr_frame *f)
 {
   int fd = *GET_ARG (f, 1);
-  const void *buffer = (void *) GET_ARG (f, 2);
+  const void *buffer = *(void **) GET_ARG (f, 2);
   unsigned size = *GET_ARG (f, 3);
 
   validate_user_buffer (buffer, size);
@@ -266,13 +268,13 @@ syscall_init (void)
 {
   lock_init (&filesys_lock);
   lock_init (&user_processes_lock);
+  list_init (&user_processes);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
 static void
 syscall_handler (struct intr_frame *f) 
 {
-  printf ("system call!\n");
   sys_funcs[*GET_ARG (f, 0)] (f);
 }
 

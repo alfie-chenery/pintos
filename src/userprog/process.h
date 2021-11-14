@@ -7,11 +7,12 @@
 #include "user/syscall.h"
 
 /* Struct to store user processes and their exit codes. */
-struct pid_elem
+struct user_elem
 {
-    pid_t pid;
-    struct thread *t;
+    tid_t tid;
+    tid_t parent_tid;
     int exit_code;
+    struct semaphore s;
     struct list_elem elem;
 };
 

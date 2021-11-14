@@ -75,12 +75,22 @@ tid_t process_execute(const char *file_name)
   tid = thread_create(argv[0], PRI_DEFAULT, start_process, argv);
   if (tid == TID_ERROR)
     palloc_free_page(fn_copy);
+
+  /* Add the user process to the list of user processes. */
+  struct user_elem u;
+  u.tid = tid;
+  u.parent_tid = thread_current ()->tid;
+  sema_init (&u.s, 0);
+  
+  lock_acquire (&user_processes_lock);
+  list_push_back (&user_processes, &u.elem);
+  lock_release (&user_processes_lock);
+
   return tid;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
-
 static void
 start_process(void *command_information)
 {
@@ -135,7 +145,7 @@ start_process(void *command_information)
   *(uint8_t *)intrf.esp = 0;
   /* printf("current stack adress after pushing null sentinel: %p\n", intrf.esp); */
   /* pushing the argument vector adresses onto the stack  */
-  for (int i = argc - 1; i > -1; i--)
+  for (int i = argc; i > -1; i--)
   {
     intrf.esp -= sizeof(char *);
     *(char **)intrf.esp = argv[i];
@@ -145,7 +155,7 @@ start_process(void *command_information)
   }
   /* push argv onto the stack  */
   intrf.esp -= sizeof(char **);
-  *(char ***)intrf.esp = argv;
+  *(char ***)intrf.esp = intrf.esp + sizeof (char **);
   /* printf("stack pointer is at %p\n", intrf.esp); */
   /* printf("the stack points to %p\n", *(char ***)intrf.esp); */
   /* push argc onto the stack  */
@@ -158,7 +168,7 @@ start_process(void *command_information)
   *(void **)intrf.esp = 0;
   /* printf("stack pointer is at %p\n", intrf.esp); */
   /* printf("the stack points to %p\n", *(void **)intrf.esp); */
-  // TODO: Remove printf comments from stack setup.
+  /* TODO: Remove useless comments. */
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in

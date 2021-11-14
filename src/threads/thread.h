@@ -109,10 +109,9 @@ struct thread
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
-    uint32_t *pagedir;                  /* Page directory. */
-    struct list fds;                    /* File descriptors. */
-    struct thread *parent;              /* The parent thread. */
-    int next_fd;                        /* An unused file descriptor number. */
+    uint32_t *pagedir;                /* Page directory. */
+    struct list fds;                  /* File descriptors. */
+    int next_fd;                      /* An unused file descriptor number. */ 
 #endif
 
     /* Owned by thread.c. */

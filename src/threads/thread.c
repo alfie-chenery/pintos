@@ -212,9 +212,8 @@ thread_create (const char *name, int priority,
   sf->ebp = 0;
 
 #ifdef USERPROG
-  /* Set parent process and initialize list of fds. */
+  /* Initialize list of fds. */
   list_init (&t->fds);
-  t->parent = thread_current ();
   t->next_fd = 2;
 #endif
 
