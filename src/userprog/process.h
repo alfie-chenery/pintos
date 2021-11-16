@@ -6,22 +6,16 @@
 #include <list.h>
 #include "user/syscall.h"
 
-/* Struct to store user processes and their exit codes. */
-struct user_elem
+/* A struct to store a pair. */
+struct pair
 {
-    tid_t tid;
-    tid_t parent_tid;
-    int exit_code;
-    struct semaphore s;
-    struct list_elem elem;
+  void *first;
+  void *second;
 };
 
 tid_t process_execute (const char *file_name);
 int process_wait (tid_t);
 void process_exit (void);
 void process_activate (void);
-
-struct list user_processes;
-struct lock user_processes_lock;
 
 #endif /* userprog/process.h */

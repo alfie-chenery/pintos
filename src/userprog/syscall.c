@@ -93,27 +93,10 @@ halt_h (struct intr_frame *f)
 static void
 exit_util (int status)
 {
-  bool is_user_process = false;
-  lock_acquire (&user_processes_lock);
-
-  // Find the user process in the list of all processes
-  for (struct list_elem *elem = list_begin (&user_processes);
-       elem != list_end (&user_processes);
-       elem = list_next (elem))
-    {
-      struct user_elem *p = list_entry (elem, struct user_elem, elem);
-      if (p->tid == thread_current ()->tid)
-        {
-          // Set the exit code and up the semaphore
-          is_user_process = true;
-          p->exit_code = status;
-          sema_up (&p->s);
-        }
-    }
-
-  lock_release (&user_processes_lock);
-  if (is_user_process)
-    printf ("%s: exit(%d)", thread_name (), status);
+  /* Update user_elem of current thread */
+  thread_current ()->user_elem->exit_code = status;
+  printf ("%s: exit(%d)\n", thread_name (), status);
+  sema_up (&thread_current ()->user_elem->s);
   thread_exit ();
 }
 
@@ -267,8 +250,6 @@ void
 syscall_init (void) 
 {
   lock_init (&filesys_lock);
-  lock_init (&user_processes_lock);
-  list_init (&user_processes);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 

@@ -19,6 +19,62 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
+/* Creates a pair */
+static struct pair *
+create_pair (void *first, void *second) 
+{
+  struct pair *p = malloc (sizeof (struct pair));
+  ASSERT (p != NULL);
+  p->first = first;
+  p->second = second;
+  return p;
+}
+
+/* Creates a user_elem for a new process */
+static struct user_elem *
+create_user_elem ()
+{
+  struct user_elem *u = malloc (sizeof (struct user_elem));
+  ASSERT (u != NULL);
+  sema_init (&u->s, 0);
+  lock_init (&u->lock);
+  u->parent_exited = false;
+  u->child_exited = false;
+  return u;
+}
+
+/* Set parent exited for a user_elem. */
+static void
+set_parent_exited (struct user_elem *u)
+{
+  bool to_free = false;
+
+  lock_acquire (&u->lock);
+  u->parent_exited = true;
+  to_free = u->child_exited;
+  lock_release (&u->lock);
+
+  /* Free the block of memory if child has also exited. */
+  if (to_free)
+    free (u);
+}
+
+/* Set child exited for a user_elem. */
+static void
+set_child_exited (struct user_elem *u)
+{
+  bool to_free = false;
+
+  lock_acquire (&u->lock);
+  u->child_exited = true;
+  to_free = u->parent_exited;
+  lock_release (&u->lock);
+
+  /* Free the block of memory if parent has also exited. */
+  if (to_free)
+    free (u);
+}
+
 //maximum size of array which holds command AND its parameters
 #define MAX_COMMAND_LINE_PARAMS 128
 
@@ -69,21 +125,16 @@ process_execute (const char *file_name)
   }
   argv[argc] = NULL;
 
+  struct user_elem *u = create_user_elem ();
+  list_push_back (&thread_current ()->children, &u->elem);
+  struct pair *p = create_pair (argv, u);
+
   /* Create a new thread to execute FILE_NAME, passing arguments from array to
   aux */
-  tid = thread_create (argv[0], PRI_DEFAULT, start_process, argv);
+  tid = thread_create (argv[0], PRI_DEFAULT, start_process, p);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
-
-  /* Add the user process to the list of user processes. */
-  struct user_elem u;
-  u.tid = tid;
-  u.parent_tid = thread_current ()->tid;
-  sema_init (&u.s, 0);
-
-  lock_acquire (&user_processes_lock);
-  list_push_back (&user_processes, &u.elem);
-  lock_release (&user_processes_lock);
+  u->tid = tid;
 
   return tid;
 }
@@ -93,7 +144,10 @@ process_execute (const char *file_name)
 static void
 start_process (void *command_information)
 {
-  char **argv = command_information;
+  char **argv = ((struct pair *) command_information)->first;
+  thread_current ()->user_elem = ((struct pair *) command_information)->second;
+  thread_current ()->user_elem->tid = thread_current ()->tid;
+    
   ASSERT (argv != NULL);
   struct intr_frame intrf;
   bool success;
@@ -150,6 +204,9 @@ start_process (void *command_information)
   intrf.esp -= sizeof (void **);
   *(void **) intrf.esp = 0;
 
+  /* Free the pair since it was allocated on heap. */
+  free (command_information);
+
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -178,23 +235,19 @@ process_wait (tid_t child_tid)
 {
   struct user_elem *user_proc = NULL;
 
-  /* parent thread acquires the lock for user_processes list */
-  lock_acquire (&user_processes_lock);
-
   /* searching for child thread with same tid as child_tid */
-  for (struct list_elem *elem = list_begin (&user_processes);
-       elem != list_end (&user_processes);
+  for (struct list_elem *elem = list_begin (&thread_current ()->children);
+       elem != list_end (&thread_current ()->children);
        elem = list_next (elem))
   {
     struct user_elem *u = list_entry (elem, struct user_elem, elem);
-    if (u->tid == child_tid && thread_current ()->tid == u->parent_tid)
+    if (u->tid == child_tid)
     {
       user_proc = u;
       break;
     }
   }
 
-  lock_release (&user_processes_lock);
   /* wait has already been called or tid is invalid */
   if (user_proc == NULL)
     return -1;
@@ -205,10 +258,12 @@ process_wait (tid_t child_tid)
   /* storing exit code */
   int exit_code = user_proc->exit_code;
 
-  /* removing from list so we know wait has been called on this process */
-  lock_acquire (&user_processes_lock);
+  /* Since wait cannot be called on the same thread multiple times, we delete 
+     this process from the list. For all practical purposes, both the parent 
+     and child of user_proc have exited. Hence we set its parent to exited so 
+     that the allocated memory can be freed. */
   list_remove (&user_proc->elem);
-  lock_release (&user_processes_lock);
+  set_child_exited (user_proc);
 
   return exit_code;
 }
@@ -218,6 +273,16 @@ void
 process_exit (void)
 {
   struct thread *cur = thread_current ();
+
+  /* Set parent exited for all user_elem where cur is the parent. */
+  for (struct list_elem *elem = list_begin (&cur->children);
+       elem != list_end (&cur->children);
+       elem = list_next (elem))
+    {
+      struct user_elem *u = list_entry (elem, struct user_elem, elem);
+      set_parent_exited (u);
+    }
+
   uint32_t *pd;
 
   /* Destroy the current process's page directory and switch back

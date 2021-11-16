@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
 
 #ifdef USERPROG
 #include "filesys/file.h"
@@ -18,6 +19,11 @@ enum thread_status
     THREAD_DYING        /* About to be destroyed. */
   };
 
+/* Thread identifier type.
+   You can redefine this to whatever type you like. */
+typedef int tid_t;
+#define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
+
 #ifdef USERPROG
 /* Struct to store file descriptors and file pointers. */
 struct fd_elem
@@ -26,12 +32,19 @@ struct fd_elem
       struct file *file;      /* The corresponding file pointer. */
       struct list_elem elem;  /* Elem to create a list. */
    };
-#endif
 
-/* Thread identifier type.
-   You can redefine this to whatever type you like. */
-typedef int tid_t;
-#define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
+/* Struct to store user processes and their exit codes. */
+struct user_elem
+{
+    tid_t tid;               /* tid of the child process. */
+    int exit_code;           /* Exit code of the process. */
+    struct semaphore s;      /* So that parent can wait on its child. */
+    bool parent_exited;      /* If the parent has exited. */
+    bool child_exited;       /* If the child has exited. */
+    struct lock lock;        /* Ensures a pointer to this is not freed twice. */
+    struct list_elem elem;   /* To create a list of these. */
+};
+#endif
 
 /* Thread priorities. */
 #define PRI_MIN 0                       /* Lowest priority. */
@@ -112,6 +125,8 @@ struct thread
     uint32_t *pagedir;                /* Page directory. */
     struct list fds;                  /* File descriptors. */
     int next_fd;                      /* An unused file descriptor number. */ 
+    struct user_elem *user_elem;      /* Where to update exit code. */
+    struct list children;             /* List of all children. */
 #endif
 
     /* Owned by thread.c. */
