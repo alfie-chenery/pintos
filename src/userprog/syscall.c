@@ -3,6 +3,7 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/malloc.h"
 #include "threads/synch.h"
 #include "process.h"
 #include "threads/vaddr.h"
@@ -134,7 +135,13 @@ create_h (struct intr_frame *f)
 static void 
 remove_h (struct intr_frame *f)
 {
+  const char *name = *(char **) GET_ARG (f, 1);
+  validate_user_string (name);
 
+  /* not sure if this works, check it later */
+  filesys_acquire ();
+  f->eax = filesys_remove (name);
+  filesys_release();
 }
 
 static void 
@@ -155,10 +162,10 @@ open_h (struct intr_frame *f)
     }
 
   // Add current file to the thread's list of fds
-  struct fd_elem fd;
-  fd.fd = thread_current ()->next_fd;
-  fd.file = file;
-  list_push_back (&thread_current ()->fds, &fd.elem);
+  struct fd_elem *fd = malloc (sizeof (struct fd_elem));
+  fd->fd = thread_current ()->next_fd;
+  fd->file = file;
+  list_push_back (&thread_current ()->fds, &fd->elem);
   f->eax = thread_current ()->next_fd++;
 }
 
@@ -176,15 +183,41 @@ filesize_h (struct intr_frame *f)
 static void 
 read_h (struct intr_frame *f)
 {
+  int fd = *GET_ARG (f, 1);
+  void *buffer = *(void **) GET_ARG (f, 2);
+  unsigned size = *GET_ARG (f, 3);
+  validate_user_buffer (buffer, size);
+  struct file *file = file_from_fd (fd);
+  /* setting return to default error value */
+  f->eax = -1;
 
+  if (fd == 0) 
+    {
+      if (sizeof (buffer) > 0)
+        {
+          /* storing the character input in the buffer */
+          *((char*) buffer) = input_getc ();
+          f->eax = 1;
+          return;
+        }
+    }
+  else 
+    {
+      filesys_acquire ();
+      f->eax = file_read (file, buffer, size);
+      filesys_release ();
+    }
 }
 
 static void 
 write_h (struct intr_frame *f)
 {
+  /* complete the write function */
   int fd = *GET_ARG (f, 1);
   const void *buffer = *(void **) GET_ARG (f, 2);
   unsigned size = *GET_ARG (f, 3);
+  /* default return value set */
+  f->eax = 0;
 
   validate_user_buffer (buffer, size);
 
@@ -192,6 +225,14 @@ write_h (struct intr_frame *f)
     {
       putbuf (buffer, size);
       f->eax = size;
+    }
+  else
+    {
+      /* create file from fd once first check has been performed */
+      struct file *file = file_from_fd (fd);
+      filesys_acquire ();
+      f->eax = file_write (file, buffer, size);
+      filesys_release ();
     }
 }
 
@@ -221,7 +262,7 @@ tell_h (struct intr_frame *f)
 static void
 close_h (struct intr_frame *f)
 {
-
+  
 }
 
 // sys_func represents a system call function called by syscall_handler

@@ -263,7 +263,7 @@ process_wait (tid_t child_tid)
      and child of user_proc have exited. Hence we set its parent to exited so 
      that the allocated memory can be freed. */
   list_remove (&user_proc->elem);
-  set_child_exited (user_proc);
+  set_parent_exited (user_proc);
 
   return exit_code;
 }
@@ -274,7 +274,7 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
 
-  /* Set parent exited for all user_elem where cur is the parent. */
+  /* Set parent exited for all user_elem where current thread is the parent. */
   for (struct list_elem *elem = list_begin (&cur->children);
        elem != list_end (&cur->children);
        elem = list_next (elem))
@@ -282,6 +282,9 @@ process_exit (void)
       struct user_elem *u = list_entry (elem, struct user_elem, elem);
       set_parent_exited (u);
     }
+  
+  /* set child exited for current thread's user elem */
+  set_child_exited (cur->user_elem);
 
   uint32_t *pd;
 
@@ -289,18 +292,18 @@ process_exit (void)
      to the kernel-only page directory. */
   pd = cur->pagedir;
   if (pd != NULL)
-  {
-    /* Correct ordering here is crucial.  We must set
+    {
+      /* Correct ordering here is crucial.  We must set
          cur->pagedir to NULL before switching page directories,
          so that a timer interrupt can't switch back to the
          process page directory.  We must activate the base page
          directory before destroying the process's page
          directory, or our active page directory will be one
          that's been freed (and cleared). */
-    cur->pagedir = NULL;
-    pagedir_activate (NULL);
-    pagedir_destroy (pd);
-  }
+      cur->pagedir = NULL;
+      pagedir_activate (NULL);
+      pagedir_destroy (pd);
+    }
 }
 
 /* Sets up the CPU for running user code in the current
