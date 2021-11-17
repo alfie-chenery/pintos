@@ -6,6 +6,7 @@
 #include "threads/malloc.h"
 #include "threads/synch.h"
 #include "process.h"
+#include "lib/user/syscall.h"
 #include "threads/vaddr.h"
 #include "devices/shutdown.h"
 #include "pagedir.h"
@@ -111,13 +112,15 @@ exit_h (struct intr_frame *f)
 static void 
 exec_h (struct intr_frame *f)
 {
-
+  const char *exec_name = *(char **) GET_ARG (f, 1);
+  f->eax = process_execute (exec_name);
 }
 
 static void 
 wait_h (struct intr_frame *f)
 {
-
+  pid_t pid = (pid_t) *GET_ARG (f, 1);
+  f->eax = process_wait (pid);
 }
 
 static void
