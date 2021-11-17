@@ -280,7 +280,8 @@ close_h (struct intr_frame *f)
       struct fd_elem *fd_elem = list_entry (elem, struct fd_elem, elem);
       if (fd_elem->fd == fd)
         {
-          list_remove (&fd_elem->elem);
+          list_remove (elem);
+          free (fd_elem);
           break;
         }
     }

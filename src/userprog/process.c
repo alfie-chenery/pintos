@@ -282,6 +282,7 @@ process_exit (void)
       struct fd_elem *fd_elem = list_entry (elem, struct fd_elem, elem);
       file_close (fd_elem->file);
       list_remove (elem);
+      free (fd_elem);
     }
   filesys_release ();
 
