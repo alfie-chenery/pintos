@@ -188,12 +188,10 @@ read_h (struct intr_frame *f)
   unsigned size = *GET_ARG (f, 3);
   validate_user_buffer (buffer, size);
   struct file *file = file_from_fd (fd);
-  /* setting return to default error value */
-  f->eax = -1;
 
   if (fd == 0) 
     {
-      if (sizeof (buffer) > 0)
+      if (size > 0)
         {
           /* storing the character input in the buffer */
           *((char*) buffer) = input_getc ();
@@ -262,7 +260,25 @@ tell_h (struct intr_frame *f)
 static void
 close_h (struct intr_frame *f)
 {
-  
+  int fd = *GET_ARG (f, 1);
+  struct file *file = file_from_fd (fd);
+
+  filesys_acquire ();
+  file_close (file);
+  filesys_release ();
+
+  /* Removing fd from the thread's list of open fds. */
+  for (struct list_elem *elem = list_begin (&thread_current ()->fds);
+       elem != list_end (&thread_current ()->fds);
+       elem = list_next (elem))
+    {
+      struct fd_elem *fd_elem = list_entry (elem, struct fd_elem, elem);
+      if (fd_elem->fd == fd)
+        {
+          list_remove (&fd_elem->elem);
+          break;
+        }
+    }
 }
 
 // sys_func represents a system call function called by syscall_handler

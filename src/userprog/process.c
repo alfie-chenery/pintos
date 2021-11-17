@@ -4,7 +4,6 @@
 #include <inttypes.h>
 #include <round.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
@@ -18,6 +17,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "lib/user/syscall.h"
 
 /* Creates a pair */
 static struct pair *
@@ -285,6 +285,15 @@ process_exit (void)
   
   /* set child exited for current thread's user elem */
   set_child_exited (cur->user_elem);
+
+  // TODO
+  /* Closing any open files. */
+  /*while (!list_empty (&cur->fds))
+    {
+      struct list_elem *elem = list_begin (&cur->fds);
+      struct fd_elem *fd_elem = list_entry (elem, struct fd_elem, elem);
+      close (fd_elem->fd);
+    }*/
 
   uint32_t *pd;
 

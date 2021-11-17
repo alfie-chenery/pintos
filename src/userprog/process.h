@@ -4,7 +4,6 @@
 #include "threads/thread.h"
 #include "threads/synch.h"
 #include <list.h>
-#include "user/syscall.h"
 
 /* A struct to store a pair. */
 struct pair
