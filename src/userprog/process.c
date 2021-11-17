@@ -17,7 +17,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
-#include "lib/user/syscall.h"
+#include "userprog/syscall.h"
 
 /* Creates a pair */
 static struct pair *
@@ -32,7 +32,7 @@ create_pair (void *first, void *second)
 
 /* Creates a user_elem for a new process */
 static struct user_elem *
-create_user_elem ()
+create_user_elem (void)
 {
   struct user_elem *u = malloc (sizeof (struct user_elem));
   ASSERT (u != NULL);
@@ -286,14 +286,16 @@ process_exit (void)
   /* set child exited for current thread's user elem */
   set_child_exited (cur->user_elem);
 
-  // TODO
   /* Closing any open files. */
-  /*while (!list_empty (&cur->fds))
+  filesys_acquire ();
+  while (!list_empty (&cur->fds))
     {
       struct list_elem *elem = list_begin (&cur->fds);
       struct fd_elem *fd_elem = list_entry (elem, struct fd_elem, elem);
-      close (fd_elem->fd);
-    }*/
+      file_close (fd_elem->file);
+      list_remove (elem);
+    }
+  filesys_release ();
 
   uint32_t *pd;
 

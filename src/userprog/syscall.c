@@ -13,25 +13,21 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 
-#define KILLED -1                 /* Exit code when user process is killed. */
-
-struct lock filesys_lock;         /* Lock for the filesystem */
+static struct lock filesys_lock;         /* Lock for the filesystem */
 
 /* Acquire the lock for the filesystem */
-static void
+void
 filesys_acquire (void)
 {
   lock_acquire (&filesys_lock);
 }
 
 /* Releases the lock for the filesystem */
-static void
+void
 filesys_release (void)
 {
   lock_release (&filesys_lock);
 }
-
-static void exit_util (int);
 
 /* Validates a pointer to a buffer passed by a user */
 static void
@@ -83,16 +79,21 @@ file_from_fd (int fd)
 }
 
 /* Get the n th argument from an interrupt frame */
-#define GET_ARG(f, n) ((int32_t *) f->esp + n)
+static int32_t *
+get_arg (const struct intr_frame *f, int n)
+{
+  validate_user_buffer ((int32_t *) f->esp + n, sizeof (int32_t));
+  return (int32_t *) f->esp + n;
+}
 
 static void 
-halt_h (struct intr_frame *f)
+halt_h (struct intr_frame *f UNUSED)
 {
   shutdown_power_off ();
 }
 
 /* Terminates a user process and prints exit code to standard output. */
-static void
+void
 exit_util (int status)
 {
   /* Update user_elem of current thread */
@@ -105,29 +106,30 @@ exit_util (int status)
 static void 
 exit_h (struct intr_frame *f)
 {
-  int status = *GET_ARG (f, 1);
+  int status = *get_arg (f, 1);
   exit_util (status);
 }
 
 static void 
 exec_h (struct intr_frame *f)
 {
-  const char *exec_name = *(char **) GET_ARG (f, 1);
+  const char *exec_name = *(char **) get_arg (f, 1);
+  validate_user_string (exec_name);
   f->eax = process_execute (exec_name);
 }
 
 static void 
 wait_h (struct intr_frame *f)
 {
-  pid_t pid = (pid_t) *GET_ARG (f, 1);
+  pid_t pid = (pid_t) *get_arg (f, 1);
   f->eax = process_wait (pid);
 }
 
 static void
 create_h (struct intr_frame *f)
 {
-  const char *file = *(char **) GET_ARG (f, 1);
-  unsigned initial_size = *GET_ARG (f, 2);
+  const char *file = *(char **) get_arg (f, 1);
+  unsigned initial_size = *get_arg (f, 2);
   validate_user_string (file);
 
   filesys_acquire ();
@@ -138,7 +140,7 @@ create_h (struct intr_frame *f)
 static void 
 remove_h (struct intr_frame *f)
 {
-  const char *name = *(char **) GET_ARG (f, 1);
+  const char *name = *(char **) get_arg (f, 1);
   validate_user_string (name);
 
   /* not sure if this works, check it later */
@@ -150,7 +152,7 @@ remove_h (struct intr_frame *f)
 static void 
 open_h (struct intr_frame *f)
 {
-  const char *name = *(char **) GET_ARG (f, 1);
+  const char *name = *(char **) get_arg (f, 1);
   validate_user_string (name);
 
   filesys_acquire ();
@@ -175,7 +177,7 @@ open_h (struct intr_frame *f)
 static void 
 filesize_h (struct intr_frame *f)
 {
-  int fd = *GET_ARG (f, 1);
+  int fd = *get_arg (f, 1);
   struct file *file = file_from_fd (fd);
 
   filesys_acquire ();
@@ -186,9 +188,9 @@ filesize_h (struct intr_frame *f)
 static void 
 read_h (struct intr_frame *f)
 {
-  int fd = *GET_ARG (f, 1);
-  void *buffer = *(void **) GET_ARG (f, 2);
-  unsigned size = *GET_ARG (f, 3);
+  int fd = *get_arg (f, 1);
+  void *buffer = *(void **) get_arg (f, 2);
+  unsigned size = *get_arg (f, 3);
   validate_user_buffer (buffer, size);
   struct file *file = file_from_fd (fd);
 
@@ -206,7 +208,7 @@ read_h (struct intr_frame *f)
     {
       filesys_acquire ();
       f->eax = file_read (file, buffer, size);
-      filesys_release ();
+      filesys_release (); 
     }
 }
 
@@ -214,9 +216,9 @@ static void
 write_h (struct intr_frame *f)
 {
   /* complete the write function */
-  int fd = *GET_ARG (f, 1);
-  const void *buffer = *(void **) GET_ARG (f, 2);
-  unsigned size = *GET_ARG (f, 3);
+  int fd = *get_arg (f, 1);
+  const void *buffer = *(void **) get_arg (f, 2);
+  unsigned size = *get_arg (f, 3);
   /* default return value set */
   f->eax = 0;
 
@@ -240,8 +242,8 @@ write_h (struct intr_frame *f)
 static void 
 seek_h (struct intr_frame *f)
 {
-  int fd = *GET_ARG (f, 1);
-  unsigned position = *GET_ARG (f, 2);
+  int fd = *get_arg (f, 1);
+  unsigned position = *get_arg (f, 2);
   struct file *file = file_from_fd (fd);
 
   filesys_acquire ();
@@ -252,7 +254,7 @@ seek_h (struct intr_frame *f)
 static void
 tell_h (struct intr_frame *f)
 {
-  int fd = *GET_ARG (f, 1);
+  int fd = *get_arg (f, 1);
   struct file *file = file_from_fd (fd);
 
   filesys_acquire ();
@@ -263,7 +265,7 @@ tell_h (struct intr_frame *f)
 static void
 close_h (struct intr_frame *f)
 {
-  int fd = *GET_ARG (f, 1);
+  int fd = *get_arg (f, 1);
   struct file *file = file_from_fd (fd);
 
   filesys_acquire ();
@@ -316,7 +318,7 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f) 
 {
-  sys_funcs[*GET_ARG (f, 0)] (f);
+  sys_funcs[*get_arg (f, 0)] (f);
 }
 
 /*
