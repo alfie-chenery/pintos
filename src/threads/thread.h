@@ -39,8 +39,8 @@ struct user_elem
     tid_t tid;               /* tid of the child process. */
     int exit_code;           /* Exit code of the process. */
     struct semaphore s;      /* So that parent can wait on its child. */
-    bool parent_exited;      /* If the parent has exited. */
-    bool child_exited;       /* If the child has exited. */
+    int rem;                 /* Number of parent/child still running. */
+    bool load_successful;    /* If load was successful. */
     struct lock lock;        /* Ensures a pointer to this is not freed twice. */
     struct list_elem elem;   /* To create a list of these. */
 };

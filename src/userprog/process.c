@@ -19,17 +19,6 @@
 #include "threads/vaddr.h"
 #include "userprog/syscall.h"
 
-/* Creates a pair */
-static struct pair *
-create_pair (void *first, void *second) 
-{
-  struct pair *p = malloc (sizeof (struct pair));
-  ASSERT (p != NULL);
-  p->first = first;
-  p->second = second;
-  return p;
-}
-
 /* Creates a user_elem for a new process */
 static struct user_elem *
 create_user_elem (void)
@@ -38,39 +27,23 @@ create_user_elem (void)
   ASSERT (u != NULL);
   sema_init (&u->s, 0);
   lock_init (&u->lock);
-  u->parent_exited = false;
-  u->child_exited = false;
+  u->rem = 2;
+  u->load_successful = false;
   return u;
 }
 
-/* Set parent exited for a user_elem. */
+/* Parent or child has exited for a user_elem. */
 static void
-set_parent_exited (struct user_elem *u)
+parent_or_child_exited (struct user_elem *u)
 {
   bool to_free = false;
 
   lock_acquire (&u->lock);
-  u->parent_exited = true;
-  to_free = u->child_exited;
+  u->rem--;
+  to_free = u->rem == 0;
   lock_release (&u->lock);
 
-  /* Free the block of memory if child has also exited. */
-  if (to_free)
-    free (u);
-}
-
-/* Set child exited for a user_elem. */
-static void
-set_child_exited (struct user_elem *u)
-{
-  bool to_free = false;
-
-  lock_acquire (&u->lock);
-  u->child_exited = true;
-  to_free = u->parent_exited;
-  lock_release (&u->lock);
-
-  /* Free the block of memory if parent has also exited. */
+  /* Free the block of memory if both parent and child have exited */
   if (to_free)
     free (u);
 }
@@ -125,18 +98,24 @@ process_execute (const char *file_name)
   }
   argv[argc] = NULL;
 
+  /* Create user_elem for the child process. */
   struct user_elem *u = create_user_elem ();
   list_push_back (&thread_current ()->children, &u->elem);
-  struct pair *p = create_pair (argv, u);
+  struct pair p;
+  p.first = argv;
+  p.second = u;
 
   /* Create a new thread to execute FILE_NAME, passing arguments from array to
   aux */
-  tid = thread_create (argv[0], PRI_DEFAULT, start_process, p);
+  tid = thread_create (argv[0], PRI_DEFAULT, start_process, &p);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
   u->tid = tid;
 
-  return tid;
+  /* Wait on child till load is done. */
+  sema_down (&u->s);
+
+  return u->load_successful ? tid : -1;
 }
 
 /* A thread function that loads a user process and starts it
@@ -144,6 +123,7 @@ process_execute (const char *file_name)
 static void
 start_process (void *command_information)
 {
+  /* command_information stores a pair. */
   char **argv = ((struct pair *) command_information)->first;
   thread_current ()->user_elem = ((struct pair *) command_information)->second;
   thread_current ()->user_elem->tid = thread_current ()->tid;
@@ -161,7 +141,12 @@ start_process (void *command_information)
 
   /* If load failed, quit. */
   if (!success)
-    thread_exit ();
+    {
+      sema_up (&thread_current ()->user_elem->s);
+      exit_util (KILLED);
+    }
+
+  thread_current ()->user_elem->load_successful = true;
 
   /* store number of arguments in argument counter */
   int argc = 0;
@@ -194,6 +179,12 @@ start_process (void *command_information)
     intrf.esp -= sizeof (char *);
     *(char **) intrf.esp = argv[i];
   }
+
+  /* Let parent know that load was successful. Note that we cannot move this 
+     above since argv was declared on the stack of the parent thread when it was
+     in process_execute. */
+  sema_up (&thread_current ()->user_elem->s);
+
   /* push argv onto the stack  */
   intrf.esp -= sizeof (char **);
   *(char ***) intrf.esp = intrf.esp + sizeof (char **);
@@ -203,9 +194,6 @@ start_process (void *command_information)
   /* pushing the sentinel void pointer onto the stack */
   intrf.esp -= sizeof (void **);
   *(void **) intrf.esp = 0;
-
-  /* Free the pair since it was allocated on heap. */
-  free (command_information);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -263,7 +251,7 @@ process_wait (tid_t child_tid)
      and child of user_proc have exited. Hence we set its parent to exited so 
      that the allocated memory can be freed. */
   list_remove (&user_proc->elem);
-  set_parent_exited (user_proc);
+  parent_or_child_exited (user_proc);
 
   return exit_code;
 }
@@ -280,11 +268,11 @@ process_exit (void)
        elem = list_next (elem))
     {
       struct user_elem *u = list_entry (elem, struct user_elem, elem);
-      set_parent_exited (u);
+      parent_or_child_exited (u);
     }
   
   /* set child exited for current thread's user elem */
-  set_child_exited (cur->user_elem);
+  parent_or_child_exited (cur->user_elem);
 
   /* Closing any open files. */
   filesys_acquire ();
