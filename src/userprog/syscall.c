@@ -197,16 +197,10 @@ read_h (struct intr_frame *f)
 
   if (fd == 0) 
     {
-      if (size > 0)
-        {
-          /* storing the character input in the buffer for size bytes */
-          for (unsigned i = 0; i < size; i++) 
-            {
-              *((char*) buffer) = input_getc ();
-            }
-          f->eax = size;
-          return;
-        }
+      /* storing the character input in the buffer for size bytes */
+      for (unsigned i = 0; i < size; i++) 
+        *((char*) buffer) = input_getc ();
+      f->eax = size;
     }
   else 
     {
@@ -322,83 +316,3 @@ syscall_handler (struct intr_frame *f)
 {
   sys_funcs[*get_arg (f, 0)] (f);
 }
-
-/*
-static void
-validate_user_memory (const void *user_memory)
-{
-  if (!is_user_vaddr (user_memory)
-      || pagedir_get_page (thread_current ()->pagedir, user_memory) == NULL)
-    exit (1);
-}
-
-void 
-halt (void) 
-{
-  shutdown_power_off ();
-}
-
-
-void 
-exit (int status) 
-{
-  char *proc_name = thread_current ()->name;
-  struct thread *cur_thread = thread_current();
-  bool is_userprog = false;
-  struct list_elem *proc;
-
-  for (proc = list_begin (&userprog_ids); proc != list_end (&userprog_ids);
-       proc = list_next (proc)) 
-    {
-         struct process_id *thread_elem = 
-          list_entry(proc, struct process_id, elem);
-         if (thread_elem->pid == cur_thread->tid 
-             && cur_thread == thread_elem->thread) 
-          {
-            is_userprog = true;
-            break;
-          }
-    }
-
-  if (is_userprog)
-    {
-      printf ("%s:  exit(%d)", proc_name, status);;
-    }
-}
-
-pid_t 
-exec (const char *file) 
-{
-  return -1;
-}
-
-int 
-wait (pid_t pid) 
-{
-  return -1;
-}
-
-int 
-write (int fd, const void *buffer, unsigned length)
-{
-  // Also check end
-  validate_user_memory (buffer);
-
-  if (fd == 1)
-    {
-      // Write to the console
-      putbuf (buffer, length);
-      return length;
-    }
-
-  return -1;
-}
-
- bool create (const char *file, unsigned initial_size);
-bool remove (const char *file);
-int open (const char *file);
-int filesize (int fd);
-int read (int fd, void *buffer, unsigned length);
-void seek (int fd, unsigned position);
-unsigned tell (int fd);
-void close (int fd); */
