@@ -50,8 +50,7 @@ parent_or_child_exited (struct user_elem *u)
 
 //maximum size of array which holds command AND its parameters
 #define MAX_COMMAND_LINE_PARAMS 128
-#define MAX_STACK_SIZE 4096
-#define STACK_BASE_SIZE 12
+#define USER_STACK_PAGE_SIZE 4096
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -72,6 +71,9 @@ process_execute (const char *file_name)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
+  /* if arguements size is greater than USER_STACK_PAGE_SIZE */
+  if (strlen (fn_copy) > USER_STACK_PAGE_SIZE)
+    return TID_ERROR;
 
   // tokenise file name into command and parameters
   char *token;
@@ -85,20 +87,14 @@ process_execute (const char *file_name)
   /* parsing the arguments */
 
   /* total argument length to ensure they do not cross page limit */
-  int total_args_length = 0;
   /* argument count */
   int argc = 0;
   for (token = strtok_r (fn_copy, " ", &save_ptr);
        token != NULL;
        token = strtok_r (NULL, " ", &save_ptr))
   {
-    int curr_arg_len = (int) strlen (token);
-    /* TODO: Not sure if this is the intended behavior */
-    if (total_args_length + curr_arg_len + STACK_BASE_SIZE > MAX_STACK_SIZE)
-      break;
     argv[argc] = token;
     argc++;
-    total_args_length += curr_arg_len;
   }
   argv[argc] = NULL;
 
@@ -113,13 +109,17 @@ process_execute (const char *file_name)
   aux */
   tid = thread_create (argv[0], PRI_DEFAULT, start_process, &p);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy);
+    {
+      palloc_free_page (fn_copy);
+      return TID_ERROR;
+    }
   u->tid = tid;
 
   /* Wait on child till load is done. */
   sema_down (&u->s);
+  palloc_free_page (fn_copy);
 
-  return u->load_successful ? tid : -1;
+  return u->load_successful ? tid : TID_ERROR;
 }
 
 /* A thread function that loads a user process and starts it
