@@ -127,6 +127,7 @@ struct thread
     int next_fd;                      /* An unused file descriptor number. */ 
     struct user_elem *user_elem;      /* Where to update exit code. */
     struct list children;             /* List of all children. */
+    struct file *loaded_file;         /* File loaded during load */
 #endif
 
     /* Owned by thread.c. */

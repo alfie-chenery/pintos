@@ -50,6 +50,8 @@ parent_or_child_exited (struct user_elem *u)
 
 //maximum size of array which holds command AND its parameters
 #define MAX_COMMAND_LINE_PARAMS 128
+#define MAX_STACK_SIZE 4096
+#define STACK_BASE_SIZE 12
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -91,7 +93,9 @@ process_execute (const char *file_name)
        token = strtok_r (NULL, " ", &save_ptr))
   {
     int curr_arg_len = (int) strlen (token);
-    /* TODO: total_args_length crosses 4Kb */
+    /* TODO: Not sure if this is the intended behavior */
+    if (total_args_length + curr_arg_len + STACK_BASE_SIZE > MAX_STACK_SIZE)
+      break;
     argv[argc] = token;
     argc++;
     total_args_length += curr_arg_len;
@@ -284,6 +288,7 @@ process_exit (void)
       list_remove (elem);
       free (fd_elem);
     }
+  file_close (cur->loaded_file);
   filesys_release ();
 
   uint32_t *pd;
@@ -412,7 +417,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
+  filesys_acquire ();
   file = filesys_open (file_name);
+  filesys_release ();
   if (file == NULL)
     {
       printf("load: %s: open failed\n", file_name);
@@ -495,10 +502,14 @@ load (const char *file_name, void (**eip) (void), void **esp)
   *eip = (void (*) (void))ehdr.e_entry;
 
   success = true;
+  filesys_acquire ();
+  file_deny_write (file);
+  filesys_release ();
+
+  thread_current ()->loaded_file = file;
 
 done:
-  /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  /* We arrive here whether the load is successful or not. */  
   return success;
 }
 

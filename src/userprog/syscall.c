@@ -9,6 +9,7 @@
 #include "lib/user/syscall.h"
 #include "threads/vaddr.h"
 #include "devices/shutdown.h"
+#include "devices/input.h"
 #include "pagedir.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
@@ -143,7 +144,7 @@ remove_h (struct intr_frame *f)
   const char *name = *(char **) get_arg (f, 1);
   validate_user_string (name);
 
-  /* not sure if this works, check it later */
+  /* not sure if this is unix like semantics */
   filesys_acquire ();
   f->eax = filesys_remove (name);
   filesys_release();
@@ -198,9 +199,12 @@ read_h (struct intr_frame *f)
     {
       if (size > 0)
         {
-          /* storing the character input in the buffer */
-          *((char*) buffer) = input_getc ();
-          f->eax = 1;
+          /* storing the character input in the buffer for size bytes */
+          for (unsigned i = 0; i < size; i++) 
+            {
+              *((char*) buffer) = input_getc ();
+            }
+          f->eax = size;
           return;
         }
     }
@@ -215,12 +219,9 @@ read_h (struct intr_frame *f)
 static void 
 write_h (struct intr_frame *f)
 {
-  /* complete the write function */
   int fd = *get_arg (f, 1);
   const void *buffer = *(void **) get_arg (f, 2);
   unsigned size = *get_arg (f, 3);
-  /* default return value set */
-  f->eax = 0;
 
   validate_user_buffer (buffer, size);
 
