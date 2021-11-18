@@ -268,10 +268,14 @@ process_exit (void)
 
   /* Set parent exited for all user_elem where current thread is the parent. */
   for (struct list_elem *elem = list_begin (&cur->children);
-       elem != list_end (&cur->children);
-       elem = list_next (elem))
+       elem != list_end (&cur->children);)
     {
       struct user_elem *u = list_entry (elem, struct user_elem, elem);
+
+      /* Note that we must store the next element in elem before calling 
+         parent_or_child_exited since the function might free u, because of 
+         which deferencing elem would trigger a page fault. */
+      elem = list_next (elem);
       parent_or_child_exited (u);
     }
   
