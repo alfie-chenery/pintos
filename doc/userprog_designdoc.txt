@@ -187,6 +187,32 @@ bytes of user data. The greatest number of inspections will still remain
 16,384 bytes given that the data is not mapped adjacently, therefore every
 address must be tested individually.
 
+>> B4: (2 marks)
+>> When an error is detected during a system call handler, how do you ensure 
+>> that all temporarily allocated resources (locks, buffers, etc.) are freed?
+
+
+>> B5: (8 marks)
+>> Describe your implementation of the "wait" system call and how it interacts 
+>> with process termination for both the parent and child.
+
+Our implementation of wait calls process_wait. In this function we must first
+verify that the child_tid passed into the function is valid otherwise we
+return TID_ERROR. This is achieved by iterating through the list of the parent's
+children, and if we are unable to find a matching tid, we must assume an invalid
+tid and been passed into the function of that the wait function has already been
+called before. We then wait on the child process, by calling sema_down, until
+it exits (if it hasn't done so already). We then store the exit status of the
+child process and remove it from the parent's list of children and flag it as
+exited so that any resources and memory allocated can be freed.
+
+If the exit syscall is called by the child, the exit code is set using the
+exit_util function which is called inside exit_h. We ensure no race conditions
+occur as a result of this as we call sema_down so that we can wait to read the
+exit code. If the kernel terminates the parent or child due to an exception, 
+the exit code will return -1 to indicate this, however as described above, the
+resources will still be freed once the user_elem->rem counter reaches 0.
+
 ---- SYNCHRONIZATION ----
 
 >> B6: (2 marks)
