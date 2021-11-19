@@ -1,0 +1,102 @@
+---- GROUP ----
+
+Alfie Chenery 		<ac320@ic.ac.uk>
+Carltone Kapfunde 	<csk20@ic.ac.uk>
+Dhruv Saraff 		<ds3520@ic.ac.uk>
+Prakhar Nagpal 		<pn320@ic.ac.uk>
+
+
+               ARGUMENT PASSING
+               ================
+
+---- DATA STRUCTURES ----
+
+>> A1: (1 mark)
+>> Copy here the declaration of each new or changed `struct' or `struct' member, 
+>> global or static variable, `typedef', or enumeration. 
+>> Identify the purpose of each in roughly 25 words.
+
+struct pair
+{
+  void *first;
+  void *second;
+};
+
+A struct used to store a generic pair of items. The struct stores
+void pointers meaning these can point to any data type.
+
+
+struct fd_elem
+{
+  int fd;                 /* File descriptor. */
+  struct file *file;      /* The corresponding file pointer. */
+  struct list_elem elem;  /* Elem to create a list. */
+};
+
+A struct to wrap file descriptors and file pointers together and additionally
+make a list of file descriptors possible.
+
+
+struct user_elem
+{
+    tid_t tid;               /* tid of the child process. */
+    int exit_code;           /* Exit code of the process. */
+    struct semaphore s;      /* So that parent can wait on its child. */
+    int rem;                 /* Number of parent/child still running. */
+    bool load_successful;    /* If load was successful. */
+    struct lock lock;        /* Ensures a pointer to this is not freed twice. */
+    struct list_elem elem;   /* To create a list of these. */
+};
+
+A struct to store user processes and their exit codes. As well as storing
+information regarding a process' children processes if applicable.
+
+
+struct thread
+  {
+    /* Owned by thread.c. */
+    tid_t tid;                          /* Thread identifier. */
+    enum thread_status status;          /* Thread state. */
+    char name[16];                      /* Name (for debugging purposes). */
+    uint8_t *stack;                     /* Saved stack pointer. */
+    int priority;                       /* Priority. */
+    struct list_elem allelem;           /* List element for all threads list. */
+
+    /* Shared between thread.c and synch.c. */
+    struct list_elem elem;              /* List element. */
+
+#ifdef USERPROG
+    /* Owned by userprog/process.c. */
+    uint32_t *pagedir;                /* Page directory. */
+    struct list fds;                  /* File descriptors. */
+    int next_fd;                      /* An unused file descriptor number. */ 
+    struct user_elem *user_elem;      /* Where to update exit code. */
+    struct list children;             /* List of all children. */
+    struct file *loaded_file;         /* File loaded during load */
+#endif
+
+    /* Owned by thread.c. */
+    unsigned magic;                     /* Detects stack overflow. */
+  };
+
+Thread struct has been modified to add information regarding files,
+user processes and children of the thread
+
+
+---- ALGORITHMS ----
+
+>> A2: (2 marks)
+>> How does your argument parsing code avoid overflowing the user's stack page?
+>> What are the efficiency considerations of your approach?
+When process_execute is called and the function name is passed in,
+the length of the file name string is checked. If it is larger than
+the max stack size of the user process (~4KB). Since a char takes 1 byte to
+store, this limits the filename with parameters to 4096 characters. This
+exceeds any reasonable length and so doesnt likely pose a realistic restricton
+on user programs.
+An efficiency consideration was taken to check the length of the string before
+tokenising it. This saves wasting computaton time to tokenise the string only
+to find out that it actually exceeds the max stack size. Unfortunatly we were
+unable to use the O(1) function sizeof() to check the string was less than 4KB
+as the string degenerates into a char* when passed into the function. Preventing
+us from gaining useful information, and hence we use strlen() instead.
