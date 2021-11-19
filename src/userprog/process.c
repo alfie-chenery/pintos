@@ -86,18 +86,16 @@ process_execute (const char *file_name)
   char *fn_copy;
   tid_t tid;
 
+  /* if arguements size is greater than USER_STACK_PAGE_SIZE return TID_ERROR */
+  if (strlen (file_name) > USER_STACK_PAGE_SIZE)
+    return TID_ERROR;
+
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
-  /* if arguements size is greater than USER_STACK_PAGE_SIZE return TID_ERROR */
-  if (strlen (fn_copy) > USER_STACK_PAGE_SIZE)
-    {
-      palloc_free_page (fn_copy);
-      return TID_ERROR;
-    }
 
   /* argument vector to mantain arguments to command */
   char *argv[MAX_COMMAND_LINE_PARAMS];
@@ -161,7 +159,7 @@ user_stack_set_up (char **argv, struct intr_frame *intrf)
       intrf->esp -= strlen (curr_arg) + 1;
       strlcpy ((char *) intrf->esp, curr_arg, strlen (curr_arg) + 1);
       /* setting the stack address of the string in the argument vector */
-      argv[i] = intrf->esp;
+      argv[i] = intrf->esp;   
     }
 
   /* rounding down the stack pointer to multiple of 4 for alignment */
