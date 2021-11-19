@@ -116,3 +116,15 @@ parameter is a pointer which replaces the need for the internal static
 buffer. By assing in the additional pointer, strtok_r() can keep track
 of the correct string and internal state, preventing the incorrect results
 found in strtok().
+
+
+>> A4: (3 marks)
+>> In Pintos, the kernel separates commands into an executable name and arguments. 
+>> In Unix-like systems, the shell does this separation. 
+>> Identify three advantages of the Unix approach.
+Firstly, by letting the shell handle parsing instead of the kernel, this
+simplifies the design of the already complex kernel. This also helps to prevents
+any bugs in the parsing algorithm which could pose security risks to the kernel's
+operations. This method also simplifies security as the executable being run can
+inherit the privileges of the shell that is starting it.
+
