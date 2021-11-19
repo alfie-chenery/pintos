@@ -101,3 +101,18 @@ unable to use the O(1) function sizeof() to check the string was less than 4KB
 as the string degenerates into a char* when passed into the function. Preventing
 us from gaining useful information, and hence we use strlen() instead.
 
+
+---- RATIONALE ----
+
+>> A3: (2 marks)
+>> Pintos does not implement strtok() because it is not thread safe. 
+>> Explain the problem with strtok() and how strtok_r() avoids this issue.
+strtok() is not thread safe because it uses an internal static buffer. This
+means if a second thread tried to call strtok() while another thread was
+already inside the function, the internal buffers would be mutated, causing
+unpredictable and undesirable results.
+Strtok_r() avoids this issue by the inclussion of an extra parameter. This
+parameter is a pointer which replaces the need for the internal static
+buffer. By assing in the additional pointer, strtok_r() can keep track
+of the correct string and internal state, preventing the incorrect results
+found in strtok().
