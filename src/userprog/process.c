@@ -58,7 +58,7 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
 /* Parses the arguments from the file name passed as a parameter into 
    the argument vector passed */
-static void
+static int
 parse_args (char **argv, void *fn_copy)
 {
   // tokenise file name into command and parameters
@@ -73,6 +73,7 @@ parse_args (char **argv, void *fn_copy)
       argc++;
     }
   argv[argc] = NULL;
+  return argc;
 }
 
 /* Starts a new thread running a user program loaded from
@@ -93,7 +94,10 @@ process_execute (const char *file_name)
   strlcpy (fn_copy, file_name, PGSIZE);
   /* if arguements size is greater than USER_STACK_PAGE_SIZE return TID_ERROR */
   if (strlen (fn_copy) > USER_STACK_PAGE_SIZE)
-    return TID_ERROR;
+    {
+      palloc_free_page (fn_copy);
+      return TID_ERROR;
+    }
 
   /* argument vector to mantain arguments to command */
   char *argv[MAX_COMMAND_LINE_PARAMS];
@@ -102,7 +106,15 @@ process_execute (const char *file_name)
   ASSERT (argv != NULL);
 
   /* parsing the arguments and generating the argument vector */
-  parse_args (argv, fn_copy);
+  int argc = parse_args (argv, fn_copy);
+  
+  /* checking if the stack can be fit in the given user stack space */
+  if (argc * sizeof (char *) + sizeof(argv) + USER_STACK_BASE_SIZE > 
+      USER_STACK_PAGE_SIZE)
+    {
+      palloc_free_page (fn_copy);
+      return TID_ERROR;
+    }
 
   /* Create user_elem for the child process. */
   struct user_elem *u = create_user_elem ();
@@ -138,11 +150,6 @@ user_stack_set_up (char **argv, struct intr_frame *intrf)
   int argc = 0;
   while (argv[argc] != NULL)
     argc++;
-
-  /* checking if the stack can be fit in the given user stack space */
-  if (argc * sizeof (char *) + sizeof(argv) + USER_STACK_BASE_SIZE > 
-      USER_STACK_PAGE_SIZE)
-    return false;
 
   /* pushing the strings in reverse order onto the stack */
   for (int i = argc - 1; i > -1; i--)
