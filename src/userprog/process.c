@@ -300,6 +300,9 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
 
+  /* Unblocking parent thread if it had called wait/process_wait. */
+  sema_up (&cur->user_elem->s);
+
   /* Set parent exited for all user_elem where current thread is the parent. */
   for (struct list_elem *elem = list_begin (&cur->children);
        elem != list_end (&cur->children);)

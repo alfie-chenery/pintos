@@ -135,9 +135,6 @@ exit_util (int status)
   /* Update user_elem of current thread */
   thread_current ()->user_elem->exit_code = status;
   printf ("%s: exit(%d)\n", thread_name (), status);
-
-  /* Unblocking parent thread if it had called wait/process_wait. */
-  sema_up (&thread_current ()->user_elem->s);
   thread_exit ();
 }
 
