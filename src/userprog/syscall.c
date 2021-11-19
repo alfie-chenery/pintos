@@ -30,36 +30,66 @@ filesys_release (void)
   lock_release (&filesys_lock);
 }
 
+/* Validates user pointer */
+static void
+validate_user_pointer (const void *p)
+{
+  if (!is_user_vaddr (p)
+      || pagedir_get_page (thread_current ()->pagedir, p) == NULL)
+    exit_util (KILLED);
+}
+
 /* Validates a pointer to a buffer passed by a user */
 static void
 validate_user_buffer (const void *buffer, unsigned size) 
 {
-  /* Going throughout the buffer rather than just checking the start. */
-  for (unsigned i = 0; i < size; i++, buffer++)
-    {
-      if (!is_user_vaddr (buffer)
-          || pagedir_get_page (thread_current ()->pagedir, buffer) == NULL)
-        /* Killing the user process since some part of buffer is invalid. */
-        exit_util (KILLED);
-    }
+  /* Checking the end of the buffer is a valid user virtual address. If the end
+     is less than PHYS_BASE, then certainly every other pointer in the buffer 
+     would be valid as well. */
+  if (!is_user_vaddr (buffer + size - 1))
+    exit_util (KILLED);
+
+  /* Check that the page directory in the beginning is fine. */
+  validate_user_pointer (buffer);
+
+  /* Go to the beginning of the next page. */
+  const void *next_page = buffer + (PGSIZE - (int) buffer % PGSIZE);
+
+  /* Check all the covered pages are valid. */
+  for (; next_page < buffer + size; next_page += PGSIZE)
+    validate_user_pointer (next_page);
 }
 
 /* Validates a string passed by a user. */
 static void
 validate_user_string (const char *string)
 {
-  for (;;)
+  /* Check that the beginning of the string is fine. */
+  validate_user_pointer (string);
+
+  /* Check if string is empty. */
+  if (*string == '\0')
+    return;
+
+  /* Check that the string terminates at a valid user virtual address and all 
+     the covered pages are valid. */
+  for (const char *c = string + 1; is_user_vaddr (c); c++)
     {
-      if (!is_user_vaddr (string)
-          || pagedir_get_page (thread_current ()->pagedir, string) == NULL)
-        /* Killing the user process since some part of string is invalid. */
+      /* Check that c is a valid user virtual address. */
+      if (!is_user_vaddr (c))
         exit_util (KILLED);
 
-      if (*string == '\0')
-        return;
+      /* If a page begins here then check that the page is valid. */
+      if ((int) c % PGSIZE == 0)
+        validate_user_pointer (c);
 
-      string++;
+      /* If we have reached the end of the string then terminate. */
+      if (*c == 0)
+        return;
     }
+
+  /* We are no longer in valid user virtual address space. */
+  exit_util (KILLED);
 }
 
 /* Returns a file pointer from a file descriptor, or null if file descriptor is 
@@ -87,7 +117,7 @@ static int32_t *
 get_arg (const struct intr_frame *f, int n)
 {
   /* Checking that the given argument is pointing to valid memory. */
-  validate_user_buffer ((int32_t *) f->esp + n, sizeof (int32_t));
+  validate_user_pointer ((int32_t *) f->esp + n);
   return (int32_t *) f->esp + n;
 }
 
