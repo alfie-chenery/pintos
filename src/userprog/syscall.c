@@ -43,6 +43,10 @@ validate_user_pointer (const void *p)
 static void
 validate_user_buffer (const void *buffer, unsigned size) 
 {
+  /* Empty buffer is valid by default. */
+  if (size == 0)
+    return;
+
   /* Checking the end of the buffer is a valid user virtual address. If the end
      is less than PHYS_BASE, then certainly every other pointer in the buffer 
      would be valid as well. */
