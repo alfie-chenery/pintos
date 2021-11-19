@@ -107,7 +107,7 @@ process_execute (const char *file_name)
   int argc = parse_args (argv, fn_copy);
   
   /* checking if the stack can be fit in the given user stack space */
-  if (argc * sizeof (char *) + sizeof(argv) + USER_STACK_BASE_SIZE > 
+  if (argc * sizeof (char *) + sizeof(fn_copy) + USER_STACK_BASE_SIZE > 
       USER_STACK_PAGE_SIZE)
     {
       palloc_free_page (fn_copy);
