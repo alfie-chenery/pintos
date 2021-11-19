@@ -29,7 +29,8 @@ static struct user_elem *
 create_user_elem (void)
 {
   struct user_elem *u = malloc (sizeof (struct user_elem));
-  ASSERT (u != NULL);
+  if (u == NULL)
+    return u;
   sema_init (&u->s, 0);
   lock_init (&u->lock);
   u->rem = 2;
@@ -116,6 +117,14 @@ process_execute (const char *file_name)
 
   /* Create user_elem for the child process. */
   struct user_elem *u = create_user_elem ();
+
+  /* Checking there was enough memory available to create the user_elem. */
+  if (u == NULL)
+    {
+      palloc_free_page (fn_copy);
+      return TID_ERROR;
+    }
+
   list_push_back (&thread_current ()->children, &u->elem);
   struct pair p;
   p.first = argv;
