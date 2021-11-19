@@ -146,12 +146,13 @@ user processes and children of the thread
 >> Describe how your code ensures safe memory access of user provided data from
 >> within the kernel. 
 Safe memory access of user provided data is ensured by verifying the pointers
-given before they are dereferenced. We first assert that the pointer is not null.
-We then check the pointer points to a valid point in the user space. If the
-pointer points into kernel space (above PHY_BASE) or into another user's program,
-then these are not valid pointers either. If the pointer is invalid for any of
-these reasons, then the user process is terminated immediatly, and the invalid
-pointer is never dereferenced, preventing a potential security risk to the kernel.
+given before they are dereferenced. We first assert that the pointer is not 
+null. We then check the pointer points to a valid point in the user space. If 
+the pointer points into kernel space (above PHY_BASE) or into another user's 
+program, then these are not valid pointers either. If the pointer is invalid 
+for any of these reasons, then the user process is terminated immediatly, and 
+the invalid pointer is never dereferenced, preventing a potential security risk 
+to the kernel.
 
 ---- SYNCHRONIZATION ----
 
