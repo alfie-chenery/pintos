@@ -146,3 +146,17 @@ user processes and children of the thread
 >> Describe how your code ensures safe memory access of user provided data from
 >> within the kernel. 
 
+---- SYNCHRONIZATION ----
+
+>> B6: (2 marks)
+>> The "exec" system call returns -1 if loading the new executable fails, so it 
+>> cannot return before the new executable has completed loading. 
+>> How does your code ensure this? 
+>> How is the load success/failure status passed back to the thread that calls 
+>> "exec"?
+
+We ensure loading is complete by using semaphores, and this is achieved by
+calling sema_down at the end of the process_execute function, just before the
+load status is returned.
+The load status is stored within the user_elem struct so in the event that
+loading the program is unsuccessful, process_execute terminates with TID_ERROR.
