@@ -19,6 +19,10 @@
 #include "threads/vaddr.h"
 #include "userprog/syscall.h"
 
+#define MAX_COMMAND_LINE_PARAMS 128
+#define USER_STACK_PAGE_SIZE 4096
+#define USER_STACK_BASE_SIZE 12
+
 /* Creates a user_elem for a new process */
 static struct user_elem *
 create_user_elem (void)
@@ -48,12 +52,27 @@ parent_or_child_exited (struct user_elem *u)
     free (u);
 }
 
-//maximum size of array which holds command AND its parameters
-#define MAX_COMMAND_LINE_PARAMS 128
-#define USER_STACK_PAGE_SIZE 4096
-
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+
+/* Parses the arguments from the file_name copy passed as a parameter into 
+   the argument vector passed */
+static void
+parse_args (char **argv, void *fn_copy)
+{
+  // tokenise file name into command and parameters
+  char *token;
+  char *save_ptr;
+  int argc = 0;
+  for (token = strtok_r (fn_copy, " ", &save_ptr);
+       token != NULL;
+       token = strtok_r (NULL, " ", &save_ptr))
+    {
+      argv[argc] = token;
+      argc++;
+    }
+  argv[argc] = NULL;
+}
 
 /* Starts a new thread running a user program loaded from
    FILENAME. The new thread may be scheduled (and may even exit)
@@ -71,32 +90,19 @@ process_execute (const char *file_name)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
-  /* if arguements size is greater than USER_STACK_PAGE_SIZE */
+  /* if arguements size is greater than USER_STACK_PAGE_SIZE return TID_ERROR */
   if (strlen (fn_copy) > USER_STACK_PAGE_SIZE)
     return TID_ERROR;
 
-  // tokenise file name into command and parameters
-  char *token;
-  char *save_ptr;
+
   /* argument vector to mantain arguments to command */
   char *argv[MAX_COMMAND_LINE_PARAMS];
   ASSERT (fn_copy != NULL);
   ASSERT (file_name != NULL);
   ASSERT (argv != NULL);
 
-  /* parsing the arguments */
-
-  /* total argument length to ensure they do not cross page limit */
-  /* argument count */
-  int argc = 0;
-  for (token = strtok_r (fn_copy, " ", &save_ptr);
-       token != NULL;
-       token = strtok_r (NULL, " ", &save_ptr))
-  {
-    argv[argc] = token;
-    argc++;
-  }
-  argv[argc] = NULL;
+  /* parsing the arguments and generating the argument vector */
+  parse_args (argv, fn_copy);
 
   /* Create user_elem for the child process. */
   struct user_elem *u = create_user_elem ();
@@ -120,6 +126,53 @@ process_execute (const char *file_name)
   palloc_free_page (fn_copy);
 
   return u->load_successful ? tid : TID_ERROR;
+}
+
+/* Sets up the user stack according the argument vector array passed from 
+   start_process and shifts the stack pointer of the interrupt frame passed 
+   by reference */
+static void
+user_stack_set_up (int argc, char **argv, struct intr_frame *intrf)
+{
+  if (argc * sizeof (char *) + sizeof(argv) + USER_STACK_BASE_SIZE > 
+      USER_STACK_PAGE_SIZE)
+      return;
+  /* pushing the strings in reverse order onto the stack */
+  for (int i = argc - 1; i > -1; i--)
+    {
+      /* reverse order argument traversal */
+      char *curr_arg = argv[i];
+      ASSERT (curr_arg != NULL);
+
+      /* copying the contents of the string onto the stack */
+      intrf->esp -= strlen (curr_arg) + 1;
+      strlcpy ((char *) intrf->esp, curr_arg, strlen (curr_arg) + 1);
+      /* setting the stack address of the string in the argument vector */
+      argv[i] = intrf->esp;
+    }
+
+  /* rounding down the stack pointer to multiple of 4 for alignment  */
+  intrf->esp -= (uintptr_t) intrf->esp % 4;
+  /* pushing the 0 uint8_t value onto the stack  */
+  intrf->esp -= sizeof (int);
+  *(uint8_t *) intrf->esp = 0;
+
+  /* pushing the argument vector adresses onto the stack  */
+  for (int i = argc; i > -1; i--)
+    {
+      intrf->esp -= sizeof (char *);
+      *(char **) intrf->esp = argv[i];
+    }
+
+  /* push argv onto the stack  */
+  intrf->esp -= sizeof (char **);
+  *(char ***) intrf->esp = intrf->esp + sizeof (char **);
+  /* push argc onto the stack  */
+  intrf->esp -= sizeof (int);
+  *(int *) intrf->esp = argc;
+  /* pushing the sentinel void pointer onto the stack */
+  intrf->esp -= sizeof (void **);
+  *(void **) intrf->esp = 0;
 }
 
 /* A thread function that loads a user process and starts it
@@ -157,47 +210,12 @@ start_process (void *command_information)
   while (argv[argc] != NULL)
     argc++;
 
-  /* setting up the stack */
-  /* pushing the strings in reverse order onto the stack */
-  for (int i = argc - 1; i > -1; i--)
-  {
-    /* reverse order argument traversal */
-    char *curr_arg = argv[i];
-    ASSERT (curr_arg != NULL);
-
-    /* copying the contents of the string onto the stack */
-    intrf.esp -= strlen (curr_arg) + 1;
-    strlcpy ((char *) intrf.esp, curr_arg, strlen (curr_arg) + 1);
-    /* setting the stack address of the string in the argument vector */
-    argv[i] = intrf.esp;
-  }
-
-  /* rounding down the stack pointer to multiple of 4 for alignment  */
-  intrf.esp -= (uintptr_t) intrf.esp % 4;
-  /* pushing the 0 uint8_t value onto the stack  */
-  intrf.esp -= sizeof (int);
-  *(uint8_t *) intrf.esp = 0;
-  /* pushing the argument vector adresses onto the stack  */
-  for (int i = argc; i > -1; i--)
-  {
-    intrf.esp -= sizeof (char *);
-    *(char **) intrf.esp = argv[i];
-  }
+  user_stack_set_up (argc, argv, &intrf);
 
   /* Let parent know that load was successful. Note that we cannot move this 
      above since argv was declared on the stack of the parent thread when it was
      in process_execute. */
   sema_up (&thread_current ()->user_elem->s);
-
-  /* push argv onto the stack  */
-  intrf.esp -= sizeof (char **);
-  *(char ***) intrf.esp = intrf.esp + sizeof (char **);
-  /* push argc onto the stack  */
-  intrf.esp -= sizeof (int);
-  *(int *) intrf.esp = argc;
-  /* pushing the sentinel void pointer onto the stack */
-  intrf.esp -= sizeof (void **);
-  *(void **) intrf.esp = 0;
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
