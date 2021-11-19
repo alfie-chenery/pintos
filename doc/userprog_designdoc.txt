@@ -26,6 +26,63 @@ A struct used to store a generic pair of items. The struct stores
 void pointers meaning these can point to any data type.
 
 
+---- ALGORITHMS ----
+
+>> A2: (2 marks)
+>> How does your argument parsing code avoid overflowing the user's stack page?
+>> What are the efficiency considerations of your approach?
+When process_execute is called and the function name is passed in,
+the length of the file name string is checked. If it is larger than
+the max stack size of the user process (~4KB). Since a char takes 1 byte to
+store, this limits the filename with parameters to 4096 characters. This
+exceeds any reasonable length and so doesnt likely pose a realistic restricton
+on user programs.
+An efficiency consideration was taken to check the length of the string before
+tokenising it. This saves wasting computaton time to tokenise the string only
+to find out that it actually exceeds the max stack size. Unfortunatly we were
+unable to use the O(1) function sizeof() to check the string was less than 4KB
+as the string degenerates into a char* when passed into the function. Preventing
+us from gaining useful information, and hence we use strlen() instead.
+
+
+---- RATIONALE ----
+
+>> A3: (2 marks)
+>> Pintos does not implement strtok() because it is not thread safe. 
+>> Explain the problem with strtok() and how strtok_r() avoids this issue.
+strtok() is not thread safe because it uses an internal static buffer. This
+means if a second thread tried to call strtok() while another thread was
+already inside the function, the internal buffers would be mutated, causing
+unpredictable and undesirable results.
+Strtok_r() avoids this issue by the inclussion of an extra parameter. This
+parameter is a pointer which replaces the need for the internal static
+buffer. By assing in the additional pointer, strtok_r() can keep track
+of the correct string and internal state, preventing the incorrect results
+found in strtok().
+
+
+>> A4: (3 marks)
+>> In Pintos, the kernel separates commands into an executable name and arguments. 
+>> In Unix-like systems, the shell does this separation. 
+>> Identify three advantages of the Unix approach.
+Firstly, by letting the shell handle parsing instead of the kernel, this
+simplifies the design of the already complex kernel. This also helps to prevents
+any bugs in the parsing algorithm which could pose security risks to the kernel's
+operations. This method also simplifies security as the executable being run can
+inherit the privileges of the shell that is starting it.
+
+
+                 SYSTEM CALLS
+                 ============
+
+---- DATA STRUCTURES ----
+
+>> B1: (6 marks) 
+>> Copy here the declaration of each new or changed `struct' or `struct' member, 
+>> global or static variable, `typedef', or enumeration. 
+>> Identify the purpose of each in roughly 25 words.
+
+
 struct fd_elem
 {
   int fd;                 /* File descriptor. */
@@ -85,46 +142,7 @@ user processes and children of the thread
 
 ---- ALGORITHMS ----
 
->> A2: (2 marks)
->> How does your argument parsing code avoid overflowing the user's stack page?
->> What are the efficiency considerations of your approach?
-When process_execute is called and the function name is passed in,
-the length of the file name string is checked. If it is larger than
-the max stack size of the user process (~4KB). Since a char takes 1 byte to
-store, this limits the filename with parameters to 4096 characters. This
-exceeds any reasonable length and so doesnt likely pose a realistic restricton
-on user programs.
-An efficiency consideration was taken to check the length of the string before
-tokenising it. This saves wasting computaton time to tokenise the string only
-to find out that it actually exceeds the max stack size. Unfortunatly we were
-unable to use the O(1) function sizeof() to check the string was less than 4KB
-as the string degenerates into a char* when passed into the function. Preventing
-us from gaining useful information, and hence we use strlen() instead.
-
-
----- RATIONALE ----
-
->> A3: (2 marks)
->> Pintos does not implement strtok() because it is not thread safe. 
->> Explain the problem with strtok() and how strtok_r() avoids this issue.
-strtok() is not thread safe because it uses an internal static buffer. This
-means if a second thread tried to call strtok() while another thread was
-already inside the function, the internal buffers would be mutated, causing
-unpredictable and undesirable results.
-Strtok_r() avoids this issue by the inclussion of an extra parameter. This
-parameter is a pointer which replaces the need for the internal static
-buffer. By assing in the additional pointer, strtok_r() can keep track
-of the correct string and internal state, preventing the incorrect results
-found in strtok().
-
-
->> A4: (3 marks)
->> In Pintos, the kernel separates commands into an executable name and arguments. 
->> In Unix-like systems, the shell does this separation. 
->> Identify three advantages of the Unix approach.
-Firstly, by letting the shell handle parsing instead of the kernel, this
-simplifies the design of the already complex kernel. This also helps to prevents
-any bugs in the parsing algorithm which could pose security risks to the kernel's
-operations. This method also simplifies security as the executable being run can
-inherit the privileges of the shell that is starting it.
+>> B2: (2 marks)
+>> Describe how your code ensures safe memory access of user provided data from
+>> within the kernel. 
 
