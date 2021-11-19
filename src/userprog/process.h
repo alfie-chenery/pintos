@@ -3,14 +3,13 @@
 
 #include "threads/thread.h"
 #include "threads/synch.h"
-#include <list.h>
 
 /* A struct to store a pair. */
 struct pair
-{
-  void *first;
-  void *second;
-};
+  {
+    void *first;
+    void *second;
+  };
 
 tid_t process_execute (const char *file_name);
 int process_wait (tid_t);

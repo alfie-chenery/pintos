@@ -27,15 +27,15 @@ typedef int tid_t;
 #ifdef USERPROG
 /* Struct to store file descriptors and file pointers. */
 struct fd_elem
-   {
-      int fd;                 /* File descriptor. */
-      struct file *file;      /* The corresponding file pointer. */
-      struct list_elem elem;  /* Elem to create a list. */
-   };
+  {
+    int fd;                 /* File descriptor. */
+    struct file *file;      /* The corresponding file pointer. */
+    struct list_elem elem;  /* Elem to create a list. */
+  };
 
 /* Struct to store user processes and their exit codes. */
 struct user_elem
-{
+  {
     tid_t tid;               /* tid of the child process. */
     int exit_code;           /* Exit code of the process. */
     struct semaphore s;      /* So that parent can wait on its child. */
@@ -43,7 +43,7 @@ struct user_elem
     bool load_successful;    /* If load was successful. */
     struct lock lock;        /* Ensures a pointer to this is not freed twice. */
     struct list_elem elem;   /* To create a list of these. */
-};
+  };
 #endif
 
 /* Thread priorities. */

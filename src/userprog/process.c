@@ -18,6 +18,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "userprog/syscall.h"
+#include <list.h>
 
 #define MAX_COMMAND_LINE_PARAMS 128
 #define USER_STACK_PAGE_SIZE 4096
@@ -55,7 +56,7 @@ parent_or_child_exited (struct user_elem *u)
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
-/* Parses the arguments from the file_name copy passed as a parameter into 
+/* Parses the arguments from the file name passed as a parameter into 
    the argument vector passed */
 static void
 parse_args (char **argv, void *fn_copy)
@@ -94,7 +95,6 @@ process_execute (const char *file_name)
   if (strlen (fn_copy) > USER_STACK_PAGE_SIZE)
     return TID_ERROR;
 
-
   /* argument vector to mantain arguments to command */
   char *argv[MAX_COMMAND_LINE_PARAMS];
   ASSERT (fn_copy != NULL);
@@ -111,8 +111,8 @@ process_execute (const char *file_name)
   p.first = argv;
   p.second = u;
 
-  /* Create a new thread to execute FILE_NAME, passing arguments from array to
-  aux */
+  /* Create a new thread to execute FILE_NAME, passing arguments from array and 
+     user_elem u as a pair to aux */
   tid = thread_create (argv[0], PRI_DEFAULT, start_process, &p);
   if (tid == TID_ERROR)
     {
@@ -128,19 +128,25 @@ process_execute (const char *file_name)
   return u->load_successful ? tid : TID_ERROR;
 }
 
-/* Sets up the user stack according the argument vector array passed from 
+/* Sets up the user stack according the argument vector passed from 
    start_process and shifts the stack pointer of the interrupt frame passed 
    by reference */
-static void
-user_stack_set_up (int argc, char **argv, struct intr_frame *intrf)
+static bool 
+user_stack_set_up (char **argv, struct intr_frame *intrf)
 {
+  /* store number of arguments in argument counter */
+  int argc = 0;
+  while (argv[argc] != NULL)
+    argc++;
+
+  /* checking if the stack can be fit in the given user stack space */
   if (argc * sizeof (char *) + sizeof(argv) + USER_STACK_BASE_SIZE > 
       USER_STACK_PAGE_SIZE)
-      return;
+    return false;
+
   /* pushing the strings in reverse order onto the stack */
   for (int i = argc - 1; i > -1; i--)
     {
-      /* reverse order argument traversal */
       char *curr_arg = argv[i];
       ASSERT (curr_arg != NULL);
 
@@ -151,13 +157,13 @@ user_stack_set_up (int argc, char **argv, struct intr_frame *intrf)
       argv[i] = intrf->esp;
     }
 
-  /* rounding down the stack pointer to multiple of 4 for alignment  */
+  /* rounding down the stack pointer to multiple of 4 for alignment */
   intrf->esp -= (uintptr_t) intrf->esp % 4;
-  /* pushing the 0 uint8_t value onto the stack  */
+  /* pushing the 0 uint8_t value onto the stack */
   intrf->esp -= sizeof (int);
   *(uint8_t *) intrf->esp = 0;
 
-  /* pushing the argument vector adresses onto the stack  */
+  /* pushing the argument vector adresses onto the stack */
   for (int i = argc; i > -1; i--)
     {
       intrf->esp -= sizeof (char *);
@@ -173,6 +179,7 @@ user_stack_set_up (int argc, char **argv, struct intr_frame *intrf)
   /* pushing the sentinel void pointer onto the stack */
   intrf->esp -= sizeof (void **);
   *(void **) intrf->esp = 0;
+  return true;
 }
 
 /* A thread function that loads a user process and starts it
@@ -205,17 +212,16 @@ start_process (void *command_information)
 
   thread_current ()->user_elem->load_successful = true;
 
-  /* store number of arguments in argument counter */
-  int argc = 0;
-  while (argv[argc] != NULL)
-    argc++;
-
-  user_stack_set_up (argc, argv, &intrf);
+  bool stack_setup_success = user_stack_set_up (argv, &intrf);
 
   /* Let parent know that load was successful. Note that we cannot move this 
      above since argv was declared on the stack of the parent thread when it was
      in process_execute. */
   sema_up (&thread_current ()->user_elem->s);
+
+  /* if stack cannot be setup kill the process */
+  if (!stack_setup_success)
+    exit_util (KILLED);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -236,10 +242,7 @@ start_process (void *command_information)
  * returns -1.  
  * If TID is invalid or if it was not a child of the calling process, or if 
  * process_wait() has already been successfully called for the given TID, 
- * returns -1 immediately, without waiting.
- * 
- * This function will be implemented in task 2.
- * For now, it does nothing. */
+ * returns -1 immediately, without waiting. */
 int 
 process_wait (tid_t child_tid)
 {
@@ -249,16 +252,16 @@ process_wait (tid_t child_tid)
   for (struct list_elem *elem = list_begin (&thread_current ()->children);
        elem != list_end (&thread_current ()->children);
        elem = list_next (elem))
-  {
-    struct user_elem *u = list_entry (elem, struct user_elem, elem);
-    if (u->tid == child_tid)
     {
-      user_proc = u;
-      break;
+      struct user_elem *u = list_entry (elem, struct user_elem, elem);
+      if (u->tid == child_tid)
+        {
+          user_proc = u;
+          break;
+        }
     }
-  }
 
-  /* wait has already been called or tid is invalid */
+  /* check if wait has already been called or tid is invalid */
   if (user_proc == NULL)
     return -1;
 
@@ -269,9 +272,8 @@ process_wait (tid_t child_tid)
   int exit_code = user_proc->exit_code;
 
   /* Since wait cannot be called on the same thread multiple times, we delete 
-     this process from the list. For all practical purposes, both the parent 
-     and child of user_proc have exited. Hence we set its parent to exited so 
-     that the allocated memory can be freed. */
+     this process from the list. user_proc no longer has any more use. Hence we
+     set its parent to exited so that the allocated memory can be freed. */
   list_remove (&user_proc->elem);
   parent_or_child_exited (user_proc);
 
@@ -441,7 +443,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* Open executable file. */
   filesys_acquire ();
   file = filesys_open (file_name);
-  filesys_release ();
   if (file == NULL)
     {
       printf("load: %s: open failed\n", file_name);
@@ -472,48 +473,48 @@ load (const char *file_name, void (**eip) (void), void **esp)
         goto done;
       file_ofs += sizeof phdr;
       switch (phdr.p_type)
-      {
-      case PT_NULL:
-      case PT_NOTE:
-      case PT_PHDR:
-      case PT_STACK:
-      default:
-        /* Ignore this segment. */
-        break;
-      case PT_DYNAMIC:
-      case PT_INTERP:
-      case PT_SHLIB:
-        goto done;
-      case PT_LOAD:
-        if (validate_segment (&phdr, file))
-          {
-            bool writable = (phdr.p_flags & PF_W) != 0;
-            uint32_t file_page = phdr.p_offset & ~PGMASK;
-            uint32_t mem_page = phdr.p_vaddr & ~PGMASK;
-            uint32_t page_offset = phdr.p_vaddr & PGMASK;
-            uint32_t read_bytes, zero_bytes;
-            if (phdr.p_filesz > 0)
-              {
-                /* Normal segment.
-                          Read initial part from disk and zero the rest. */
-                read_bytes = page_offset + phdr.p_filesz;
-                zero_bytes = (ROUND_UP (page_offset + phdr.p_memsz, PGSIZE) - read_bytes);
-              }
-            else
-              {
-                /* Entirely zero.
-                          Don't read anything from disk. */
-                read_bytes = 0;
-                zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
-              }
-            if (!load_segment (file, file_page, (void *)mem_page,
-                              read_bytes, zero_bytes, writable))
-              goto done;
-          }
-        else
+        {
+        case PT_NULL:
+        case PT_NOTE:
+        case PT_PHDR:
+        case PT_STACK:
+        default:
+          /* Ignore this segment. */
+          break;
+        case PT_DYNAMIC:
+        case PT_INTERP:
+        case PT_SHLIB:
           goto done;
-        break;
-      }
+        case PT_LOAD:
+          if (validate_segment (&phdr, file))
+            {
+              bool writable = (phdr.p_flags & PF_W) != 0;
+              uint32_t file_page = phdr.p_offset & ~PGMASK;
+              uint32_t mem_page = phdr.p_vaddr & ~PGMASK;
+              uint32_t page_offset = phdr.p_vaddr & PGMASK;
+              uint32_t read_bytes, zero_bytes;
+              if (phdr.p_filesz > 0)
+                {
+                  /* Normal segment.
+                            Read initial part from disk and zero the rest. */
+                  read_bytes = page_offset + phdr.p_filesz;
+                  zero_bytes = (ROUND_UP (page_offset + phdr.p_memsz, PGSIZE) - read_bytes);
+                }
+              else
+                {
+                  /* Entirely zero.
+                            Don't read anything from disk. */
+                  read_bytes = 0;
+                  zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
+                }
+              if (!load_segment (file, file_page, (void *)mem_page,
+                                read_bytes, zero_bytes, writable))
+                goto done;
+            }
+          else
+            goto done;
+          break;
+        }
     }
 
   /* Set up stack. */
@@ -524,13 +525,12 @@ load (const char *file_name, void (**eip) (void), void **esp)
   *eip = (void (*) (void))ehdr.e_entry;
 
   success = true;
-  filesys_acquire ();
   file_deny_write (file);
-  filesys_release ();
 
   thread_current ()->loaded_file = file;
 
 done:
+  filesys_release ();
   /* We arrive here whether the load is successful or not. */  
   return success;
 }
