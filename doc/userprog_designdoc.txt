@@ -150,9 +150,42 @@ given before they are dereferenced. We first assert that the pointer is not
 null. We then check the pointer points to a valid point in the user space. If 
 the pointer points into kernel space (above PHY_BASE) or into another user's 
 program, then these are not valid pointers either. If the pointer is invalid 
-for any of these reasons, then the user process is terminated immediatly, and 
+for any of these reasons, then the user process is terminated immediately, and 
 the invalid pointer is never dereferenced, preventing a potential security risk 
 to the kernel.
+
+>> B3: (3 marks)
+>> Suppose that we choose to verify user provided pointers by validating them 
+>> before use (i.e. using the first method described in the spec).
+>> What is the least and the greatest possible number of inspections of the page
+>> table (e.g. calls to pagedir_get_page()) that would need to be made in the 
+>> following cases?
+>> a) A system call that passes the kernel a pointer to 10 bytes of user data.
+>> b) A system call that passes the kernel a pointer to a full page 
+>>    (4,096 bytes) of user data.
+>> c) A system call that passes the kernel a pointer to 4 full pages 
+>>    (16,384 bytes) of user data.
+>> You must briefly explain the checking tactic you would use and how it applies 
+>> to each case to generate your answers.
+
+a) The least number of inspections is 1 since if the address is more than 10
+bytes from the end of the page, we know the rest of the data must full inside
+the same page. However the greatest will be 10 bytes if the data is not
+mapped adjacently and we would have to check each address individually.
+
+b) The least number of inspections is 1 as if we are at the start of the page we
+no longer need to test any further as the address will be followed by a full
+page of data. However the most number of inspections may a full 4096 as the data
+may not be mapped in adjacent virtual memory addresses, hence each address must
+be verified individually.
+
+c) The least number of inspections will be 4 as if we are returned an address
+at the start of the page, we know the first 4,096 bytes of user data will be
+found within the page. The second 4,096 bytes can be tested in a similar manner
+and if the same conditions apply then we do so for the third and fourth 4,096
+bytes of user data. The greatest number of inspections will still remain
+16,384 bytes given that the data is not mapped adjacently, therefore every
+address must be tested individually.
 
 ---- SYNCHRONIZATION ----
 
