@@ -160,3 +160,23 @@ calling sema_down at the end of the process_execute function, just before the
 load status is returned.
 The load status is stored within the user_elem struct so in the event that
 loading the program is unsuccessful, process_execute terminates with TID_ERROR.
+
+>> B7: (5 marks)
+>> Consider parent process P with child process C. 
+>> How do you ensure proper synchronization and avoid race conditions when: 
+>>   i) P calls wait(C) before C exits?
+>>  ii) P calls wait(C) after C exits?
+>> iii) P terminates, without waiting, before C exits?
+>>  iv) P terminates, without waiting, after C exits?
+>> Additionally, how do you ensure that all resources are freed regardless of 
+>> the above case? 
+
+i) P will call sema_down and wait for the child process exit and as a result
+to release the lock.
+ii) There is no child to wait for, hence P will not wait.
+iii) All of its children will release their locks and exit.
+iv) All of its children will release their locks
+
+The function parent_or_child_exited frees the resources by keeping track of
+the user_elem->rem variable which stores how many children are still running.
+Once this reaches 0, free() is called.
