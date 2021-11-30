@@ -77,6 +77,21 @@ parse_args (char **argv, void *fn_copy)
   return argc;
 }
 
+static int
+get_arg_count (char *fname)
+{
+  char *token;
+  char *save_ptr;
+  int argc = 0;
+  for (token = strtok_r (fname, " ", &save_ptr);
+       token != NULL;
+       token = strtok_r (NULL, " ", &save_ptr))
+    {
+      argc++;
+    }
+  return argc;
+}
+
 /* Starts a new thread running a user program loaded from
    FILENAME. The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -85,6 +100,7 @@ tid_t
 process_execute (const char *file_name)
 {
   char *fn_copy;
+  char *fname;
   tid_t tid;
 
   /* if arguements size is greater than USER_STACK_PAGE_SIZE return TID_ERROR */
@@ -94,12 +110,16 @@ process_execute (const char *file_name)
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
+  fname = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
+  strlcpy (fname, file_name, PGSIZE);
 
+  int arg_count = get_arg_count (fname);
+  palloc_free_page (fname);
   /* argument vector to mantain arguments to command */
-  char *argv[MAX_COMMAND_LINE_PARAMS];
+  char *argv[arg_count];
   ASSERT (fn_copy != NULL);
   ASSERT (file_name != NULL);
   ASSERT (argv != NULL);
