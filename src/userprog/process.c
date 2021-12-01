@@ -19,6 +19,7 @@
 #include "threads/vaddr.h"
 #include "userprog/syscall.h"
 #include <list.h>
+#include "vm/frame.h"
 
 #define MAX_COMMAND_LINE_PARAMS 128
 #define USER_STACK_PAGE_SIZE 4096
@@ -659,14 +660,14 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       if (kpage == NULL)
         {
           /* Get a new page of memory. */
-          kpage = palloc_get_page (PAL_USER);
+          kpage = frame_table_get_user_page (0);
           if (kpage == NULL)
             return false;
 
           /* Add the page to the process's address space. */
           if (!install_page (upage, kpage, writable))
             {
-              palloc_free_page (kpage);
+              frame_table_free_user_page (kpage);
               return false;
             }
         }
@@ -674,7 +675,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Load data into the page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
-          palloc_free_page (kpage);
+          frame_table_free_user_page (kpage);
           return false;
         }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
@@ -695,14 +696,14 @@ setup_stack (void **esp)
   uint8_t *kpage;
   bool success = false;
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  kpage = frame_table_get_user_page (PAL_ZERO);
   if (kpage != NULL)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
         *esp = (PHYS_BASE);
       else
-        palloc_free_page (kpage);
+        frame_table_free_user_page (kpage);
     }
   return success;
 }
