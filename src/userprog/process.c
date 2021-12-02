@@ -20,6 +20,7 @@
 #include "userprog/syscall.h"
 #include <list.h>
 #include "vm/frame.h"
+#include "vm/page.h"
 
 #define MAX_COMMAND_LINE_PARAMS 128
 #define USER_STACK_PAGE_SIZE 4096
@@ -226,6 +227,9 @@ start_process (void *command_information)
   char **argv = ((struct pair *) command_information)->first;
   thread_current ()->user_elem = ((struct pair *) command_information)->second;
   thread_current ()->user_elem->tid = thread_current ()->tid;
+
+  /* Initialize the supplemental page table. */
+  supplemental_page_table_init (&thread_current ()->supplemental_page_table);
     
   ASSERT (argv != NULL);
   struct intr_frame intrf;

@@ -8,6 +8,7 @@
 
 #ifdef USERPROG
 #include "filesys/file.h"
+#include "lib/kernel/hash.h"
 #endif
 
 /* States in a thread's life cycle. */
@@ -122,12 +123,13 @@ struct thread
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
-    uint32_t *pagedir;                /* Page directory. */
-    struct list fds;                  /* File descriptors. */
-    int next_fd;                      /* An unused file descriptor number. */ 
-    struct user_elem *user_elem;      /* Where to update exit code. */
-    struct list children;             /* List of all children. */
-    struct file *loaded_file;         /* File loaded during load */
+    uint32_t *pagedir;                   /* Page directory. */
+    struct hash supplemental_page_table; /* Supplemental page table. */
+    struct list fds;                     /* File descriptors. */
+    int next_fd;                         /* An unused file descriptor number. */ 
+    struct user_elem *user_elem;         /* Where to update exit code. */
+    struct list children;                /* List of all children. */
+    struct file *loaded_file;            /* File loaded during load */
 #endif
 
     /* Owned by thread.c. */

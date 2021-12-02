@@ -11,8 +11,8 @@ static struct lock frame_table_lock;
 static unsigned
 frame_hash (const struct hash_elem *e, void *aux UNUSED)
 {
-  uint32_t address = hash_entry (e, struct frame_elem, elem)->address;
-  return hash_int (address);
+  void *frame = hash_entry (e, struct frame_elem, elem)->frame;
+  return hash_int ((int) frame);
 }
 
 /* Compares two frame_elem. */
@@ -21,38 +21,38 @@ frame_less (const struct hash_elem *a,
             const struct hash_elem *b, 
             void *aux UNUSED)
 {
-  uint32_t address_a = hash_entry (a, struct frame_elem, elem)->address;
-  uint32_t address_b = hash_entry (b, struct frame_elem, elem)->address;
-  return address_a < address_b;
+  void *frame_a = hash_entry (a, struct frame_elem, elem)->frame;
+  void *frame_b = hash_entry (b, struct frame_elem, elem)->frame;
+  return frame_a < frame_b;
 }
 
 /* Inserts a frame into the frame table. */
 static void
-insert_frame (uint32_t address)
+insert_frame (void *frame)
 {
-  struct frame_elem *frame = malloc (sizeof (struct frame_elem));
+  struct frame_elem *frame_elem = malloc (sizeof (struct frame_elem));
   ASSERT (frame != NULL);
 
-  frame->address = address;
-  frame->owner = thread_current ();
+  frame_elem->frame = frame;
+  frame_elem->owner = thread_current ();
 
   lock_acquire (&frame_table_lock);
-  hash_insert (&frame_table, &frame->elem);
+  hash_insert (&frame_table, &frame_elem->elem);
   lock_release (&frame_table_lock);
 }
 
 /* Deletes a frame from the frame table. */
 static void
-delete_frame (uint32_t address)
+delete_frame (void *frame)
 {
-  struct frame_elem frame;
-  frame.address = address;
+  struct frame_elem frame_elem;
+  frame_elem.frame = frame;
 
   lock_acquire (&frame_table_lock);
-  if (hash_find (&frame_table, &frame.elem) == NULL)
+  if (hash_find (&frame_table, &frame_elem.elem) == NULL)
     PANIC ("Could not find the requested frame in the frame table");
   
-  hash_delete (&frame_table, &frame.elem);
+  hash_delete (&frame_table, &frame_elem.elem);
   lock_release (&frame_table_lock);
 }
 
@@ -71,7 +71,7 @@ frame_table_get_user_page (enum palloc_flags flags)
   void *page = palloc_get_page (PAL_USER | flags);
   ASSERT (page != NULL);
 
-  insert_frame ((uint32_t) page);
+  insert_frame (page);
   return page;
 }
 
@@ -80,5 +80,5 @@ void
 frame_table_free_user_page (void *page)
 {
   palloc_free_page (page);
-  delete_frame ((uint32_t) page);
+  delete_frame (page);
 }

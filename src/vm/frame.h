@@ -8,7 +8,7 @@
 /* Stores an entry in the frame table. */
 struct frame_elem 
   {
-    uint32_t address;           /* Address of frame in memory. */
+    void *frame;                /* Pointer to frame in memory. */
     struct thread *owner;       /* The thread which owns the frame. */
     struct hash_elem elem;      /* To add this in a hash table. */
   };
