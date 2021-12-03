@@ -579,7 +579,7 @@ done:
 
 /* load() helpers. */
 
-static bool install_page (void *upage, void *kpage, bool writable);
+bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -648,47 +648,35 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs(upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
-  file_seek (file, ofs);
+  // file_seek (file, ofs);
+  off_t ofs_curr = ofs;
   while (read_bytes > 0 || zero_bytes > 0)
-    {
-      /* Calculate how to fill this page.
-          We will read PAGE_READ_BYTES bytes from FILE
-          and zero the final PAGE_ZERO_BYTES bytes. */
-      size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
-      size_t page_zero_bytes = PGSIZE - page_read_bytes;
+  {
+    /* Calculate how to fill this page.
+        We will read PAGE_READ_BYTES bytes from FILE
+        and zero the final PAGE_ZERO_BYTES bytes. */
+    size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+    size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Check if virtual page already allocated */
-      struct thread *t = thread_current ();
-      uint8_t *kpage = pagedir_get_page (t->pagedir, upage);
+    struct thread *t = thread_current();
 
-      if (kpage == NULL)
-        {
-          /* Get a new page of memory. */
-          kpage = frame_table_get_user_page (0);
-          if (kpage == NULL)
-            return false;
+    struct hash supplemental_page_table = t->supplemental_page_table;
+    struct page_elem *page =
+        create_page_elem(upage, file, ofs_curr, page_read_bytes,
+                         page_zero_bytes, writable);
 
-          /* Add the page to the process's address space. */
-          if (!install_page (upage, kpage, writable))
-            {
-              frame_table_free_user_page (kpage);
-              return false;
-            }
-        }
+    if (page == NULL)
+      return false;
 
-      /* Load data into the page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          frame_table_free_user_page (kpage);
-          return false;
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
+    insert_supplemental_page_entry(&supplemental_page_table, page);
 
-      /* Advance. */
-      read_bytes -= page_read_bytes;
-      zero_bytes -= page_zero_bytes;
-      upage += PGSIZE;
-    }
+    /* Advance. */
+    read_bytes -= page_read_bytes;
+    zero_bytes -= page_zero_bytes;
+    upage += PGSIZE;
+    ofs_curr += page_read_bytes;
+  }
+
   return true;
 }
 
@@ -721,7 +709,7 @@ setup_stack (void **esp)
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
+bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();

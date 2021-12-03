@@ -5,6 +5,9 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "userprog/syscall.h"
+#include "vm/page.h"
+#include "threads/vaddr.h"
+#include "userprog/pagedir.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -145,6 +148,21 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
+  void *page = pg_round_down (f->eip);
+   printf ("Trying to allocate frame, PLEASE FUCKING WORK\n");
+
+  if (f->cs == SEL_UCSEG && 
+      contains_vaddr (&thread_current ()->supplemental_page_table, page))
+   {
+      printf ("allocating frame from lazy loading\n");
+      // printf ("%p\n", page);
+      allocate_frame (page);
+      return;
+      // f->eip = pagedir_get_page(thread_current()->pagedir, f->eip);
+      // ASSERT (f->eip != NULL);
+      // f->eip ();
+      // NOT_REACHED ();   
+   }
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
