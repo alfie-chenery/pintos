@@ -151,8 +151,7 @@ page_fault (struct intr_frame *f)
   void *page = pg_round_down (fault_addr);
   //printf ("f->eip = %p, fault_addr = %p\n", f->eip, fault_addr);
 
-  if (f->cs == SEL_UCSEG && 
-      contains_vaddr (&thread_current ()->supplemental_page_table, page))
+  if (contains_vaddr (&thread_current ()->supplemental_page_table, page))
    {
       // printf ("%p\n", page);
       allocate_frame (page);

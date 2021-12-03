@@ -13,29 +13,39 @@
 #include "pagedir.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "vm/page.h"
 
-static struct lock filesys_lock;         /* Lock for the filesystem. */
+static struct lock filesys_lock;      /* Lock for the filesystem. */
+static int filesys_lock_depth;        /* How many times it has been acquired. */
 
 /* Acquire the lock for the filesystem. */
 void
 filesys_acquire (void)
 {
-  lock_acquire (&filesys_lock);
+  if (lock_held_by_current_thread (&filesys_lock))
+    filesys_lock_depth++;
+  else
+    lock_acquire (&filesys_lock);
 }
 
 /* Releases the lock for the filesystem. */
 void
 filesys_release (void)
 {
-  lock_release (&filesys_lock);
+  if (filesys_lock_depth > 0)
+    filesys_lock_depth--;
+  else
+    lock_release (&filesys_lock);
 }
 
 /* Validates user pointer */
 static void
 validate_user_pointer (const void *p)
 {
-  if (!is_user_vaddr (p)
-      || pagedir_get_page (thread_current ()->pagedir, p) == NULL)
+  if (!is_user_vaddr (p) || 
+        (pagedir_get_page (thread_current ()->pagedir, p) == NULL &&
+         !contains_vaddr (&thread_current ()->supplemental_page_table, 
+                          pg_round_down (p))))
     exit_util (KILLED);
 }
 

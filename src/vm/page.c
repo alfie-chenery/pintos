@@ -62,12 +62,6 @@ create_page_elem (void *vaddr, struct file *file, size_t offset,
   return page;
 }
 
-static void
-printf_hash (struct hash_elem *elem, void *aux)
-{
-  printf ("%p\n", hash_entry (elem, struct page_elem, elem)->vaddr);
-}
-
 /* Check if supplemental page table contains vaddr */
 bool
 contains_vaddr (struct hash *supplemental_hash_table, void *vaddr)
@@ -110,10 +104,13 @@ allocate_frame (void *fault_addr)
         }
     }
 
+  filesys_acquire ();
   file_seek (page.file, page.offset);
+  int bytes_read = file_read (page.file, kpage, page.bytes_read);
+  filesys_release ();
 
   /* Load data into the page. */
-  if (file_read (page.file, kpage, page.bytes_read) != (int) page.bytes_read)
+  if (bytes_read != (int) page.bytes_read)
     {
       frame_table_free_user_page (kpage);
       exit_util (KILLED);
