@@ -41,7 +41,7 @@ void
 insert_supplemental_page_entry (struct hash *supplemental_page_table, 
                                 struct page_elem *page)
 {
-  hash_insert (supplemental_page_table, &page->elem);
+  hash_replace (supplemental_page_table, &page->elem);
 }
 
 /* Smart constructor to create a page_elem */

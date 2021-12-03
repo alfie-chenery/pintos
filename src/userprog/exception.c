@@ -148,13 +148,12 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
-  void *page = pg_round_down (f->eip);
-   printf ("Trying to allocate frame, PLEASE FUCKING WORK\n");
+  void *page = pg_round_down (fault_addr);
+  //printf ("f->eip = %p, fault_addr = %p\n", f->eip, fault_addr);
 
   if (f->cs == SEL_UCSEG && 
       contains_vaddr (&thread_current ()->supplemental_page_table, page))
    {
-      printf ("allocating frame from lazy loading\n");
       // printf ("%p\n", page);
       allocate_frame (page);
       return;
