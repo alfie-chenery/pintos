@@ -243,7 +243,7 @@ open_h (struct intr_frame *f)
   f->eax = thread_current ()->next_fd++;
 }
 
-/* Returns the size in bytes of the file open as the given file descriptor, or \
+/* Returns the size in bytes of the file open as the given file descriptor, or 
    -1 if the file descriptor is invalid. */
 static void 
 filesize_h (struct intr_frame *f)
@@ -384,11 +384,142 @@ close_h (struct intr_frame *f)
     }
 }
 
+/* Maps a file into virtual memory. The passed file descriptor must be valid, 
+   the file must not have length 0. The passed address *addr must be page 
+   aligned and the range of pages mapped must not overlap with any existing
+   pages. Moreover, addr cannot be NULL. If no pre condition is violated, then 
+   the function returns a "mapping ID" that uniquely identifies the mapping 
+   within the process. On failure, it returns -1, which is not otherwise a 
+   valid mapping ID. */
+static void
+mmap_h (struct intr_frame *f)
+{
+  int fd = *get_arg (f, 1);
+  void *addr = *(void **) get_arg (f, 2);
+  struct file *file = file_from_fd (fd);
+  f->eax = -1; /* Setting the default return value. */
+
+  filesys_acquire ();
+  int size = file == NULL ? 0 : file_length (file);
+  filesys_release ();
+
+  /* Checking if any pre-condition for mmap has been violated. */
+  if (addr == NULL || size == 0 || addr != pg_round_down (addr))
+    return;
+
+  /* Checking that the range of pages that will be covered does not overlap with
+     any existing page. */
+  struct thread *t = thread_current ();
+  for (void *page = addr; page < addr + size; page += PGSIZE)
+    {
+      if (contains_vaddr (&t->supplemental_page_table, page))
+        return;
+    }
+
+  /* Malloc a mapid_elem for the mapping and check that it is not null. */
+  struct mapid_elem *mapid = malloc (sizeof (struct mapid_elem));
+  if (mapid == NULL)
+    return;
+
+  /* Reopening the file. */
+  file = file_reopen (file);
+  if (file == NULL)
+    return;
+
+  /* Add the required pages to the supplemental page table. */
+  int ofs = 0;
+  for (void *page = addr; page < addr + size; page += PGSIZE)
+    {
+      size_t bytes_read = addr + size - page > PGSIZE 
+                          ? PGSIZE : addr + size - page;
+      size_t zero_bytes = PGSIZE - bytes_read;
+
+      /* Create a page_elem for the current page. */
+      struct page_elem *page_elem 
+          = create_page_elem (page, file, ofs, bytes_read, zero_bytes, true);
+
+      /* Return if the page_elem could not be malloced. */
+      /* TODO: erase pages that were allocated earlier. */
+      if (page_elem == NULL)
+        return;
+
+      /* Add the page_elem to the supplemental page table. */
+      insert_supplemental_page_entry (&t->supplemental_page_table, page_elem);
+    }
+
+  /* Add the mapid_elem to the current thread's list of mappings. */
+  f->eax = mapid->mapid = t->next_mapid++;
+  mapid->addr = addr;
+  mapid->file = file;
+  mapid->size = size;
+  list_push_back (&t->mapids, &mapid->elem);
+}
+
+/* Writes back all the accessed pages of a mapped file to memory. */
+void 
+munmap_util (struct mapid_elem *mapid)
+{
+  struct thread *t = thread_current ();
+
+  filesys_acquire ();
+  for (void *page = mapid->addr; page < mapid->addr + mapid->size; 
+       page += PGSIZE)
+    {
+      struct page_elem *page_elem = 
+          get_page_elem (&t->supplemental_page_table, page);
+      ASSERT (page_elem != NULL);
+
+      void *kpage = page_elem->frame;
+      if (kpage != NULL && pagedir_is_dirty (t->pagedir, page))
+        {
+          file_seek (mapid->file, page_elem->offset);
+          file_write (mapid->file, kpage, page_elem->bytes_read);
+        }
+
+      /* TODO: Remove page_elem from SPT abd free it. */
+    }
+  file_close (mapid->file);
+  filesys_release ();
+}
+
+/* Unmaps a file from virtual memory. */
+static void
+munmap_h (struct intr_frame *f)
+{
+  mapid_t mapping = *get_arg (f, 1);
+
+  /* Finding the mapid_elem for the given mapid. */
+  struct thread *t = thread_current ();
+  struct mapid_elem *mapid = NULL;
+  for (struct list_elem *e = list_begin (&t->mapids);
+       e != list_end (&t->mapids);
+       e = list_next (e))
+    {
+      struct mapid_elem *cur = list_entry (e, struct mapid_elem, elem);
+      if (cur->mapid == mapping)
+        {
+          mapid = cur;
+          break;
+        }
+    }
+
+  /* Check if invalid argument has been passed. */
+  if (mapid == NULL)
+    return;
+
+  /* Writing the pages which have been changed back to the file. */
+  munmap_util (mapid);
+
+  /* Remove mapid from the list of mappings. */
+  list_remove (&mapid->elem);
+  free (mapid);
+}
+
 /* sys_func represents a system call function called by syscall_handler. */
 typedef void sys_func (struct intr_frame *);
 
 /* Array mapping sys_func to the corresponsing system call numbers. */
-static sys_func *sys_funcs[13] = {
+static sys_func *sys_funcs[15] = {
   halt_h,
   exit_h,
   exec_h,
@@ -401,7 +532,9 @@ static sys_func *sys_funcs[13] = {
   write_h,
   seek_h,
   tell_h,
-  close_h
+  close_h,
+  mmap_h,
+  munmap_h
 };
 
 static void syscall_handler (struct intr_frame *);

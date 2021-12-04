@@ -22,5 +22,6 @@ struct page_elem *create_page_elem (void *, struct file *, size_t,
                                     size_t, size_t, bool);
 bool contains_vaddr (struct hash *, void *);
 void allocate_frame (void *);
+struct page_elem *get_page_elem (struct hash *, void *);
 
 #endif

@@ -34,6 +34,16 @@ struct fd_elem
     struct list_elem elem;  /* Elem to create a list. */
   };
 
+/* Struct to store file mappings. */
+struct mapid_elem
+  {
+    int mapid;              /* The mapping ID. */
+    void *addr;             /* The address the file is mapped to. */
+    struct file *file;      /* The file which is mapped. */
+    int size;               /* Length of file. */
+    struct list_elem elem;  /* Elem to create a list. */
+  };
+
 /* Struct to store user processes and their exit codes. */
 struct user_elem
   {
@@ -130,6 +140,8 @@ struct thread
     struct user_elem *user_elem;         /* Where to update exit code. */
     struct list children;                /* List of all children. */
     struct file *loaded_file;            /* File loaded during load */
+    struct list mapids;                  /* List of mappings. */
+    int next_mapid;                  /* An unused mapping ID. */
 #endif
 
     /* Owned by thread.c. */

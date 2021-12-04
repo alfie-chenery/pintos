@@ -54,6 +54,7 @@ create_page_elem (void *vaddr, struct file *file, size_t offset,
     return page;
 
   page->vaddr = vaddr;
+  page->frame = NULL;
   page->file = file;
   page->offset = offset;
   page->bytes_read = bytes_read;
@@ -66,10 +67,22 @@ create_page_elem (void *vaddr, struct file *file, size_t offset,
 bool
 contains_vaddr (struct hash *supplemental_hash_table, void *vaddr)
 {
-  // hash_apply (supplemental_hash_table, printf_hash);
   struct page_elem page;
   page.vaddr = vaddr;
   return hash_find (supplemental_hash_table, &page.elem) != NULL;
+}
+
+/* Get page_elem for a specific vaddr. */
+struct page_elem *
+get_page_elem (struct hash *supplemental_hash_table, void *vaddr)
+{
+  struct page_elem page;
+  page.vaddr = vaddr;
+  struct hash_elem *elem = hash_find (supplemental_hash_table, &page.elem);
+
+  if (elem == NULL)
+    return NULL;
+  return hash_entry (elem, struct page_elem, elem);
 }
 
 /* Lazy allocation of a frame from page fault handler */
@@ -103,6 +116,8 @@ allocate_frame (void *fault_addr)
           exit_util (KILLED);
         }
     }
+
+  page.frame = kpage;
 
   filesys_acquire ();
   file_seek (page.file, page.offset);

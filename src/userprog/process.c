@@ -357,6 +357,16 @@ process_exit (void)
   file_close (cur->loaded_file);
   filesys_release ();
 
+  /* Unmapping any mapped files. */
+  while (!list_empty (&cur->mapids))
+    {
+      struct list_elem *elem = list_begin (&cur->mapids);
+      struct mapid_elem *mapid = list_entry (elem, struct mapid_elem, elem);
+      munmap_util (mapid);
+      list_remove (elem);
+      free (mapid);
+    }
+
   uint32_t *pd;
 
   /* Destroy the current process's page directory and switch back

@@ -480,10 +480,16 @@ init_thread (struct thread *t, const char *name, int priority)
   t->magic = THREAD_MAGIC;
 
 #ifdef USERPROG
-  /* Initialize list of fds and children. */
+  /* Initialize list of fds. */
   list_init (&t->fds);
   t->next_fd = 2;
+
+  /* Initialize the list of children. */
   list_init (&t->children);
+
+  /* Initialize the list of file mappings. */
+  list_init (&t->mapids);
+  t->next_mapid = 0;
 #endif
 
   old_level = intr_disable ();
