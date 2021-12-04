@@ -469,14 +469,16 @@ munmap_util (struct mapid_elem *mapid)
           get_page_elem (&t->supplemental_page_table, page);
       ASSERT (page_elem != NULL);
 
-      void *kpage = page_elem->frame;
-      if (kpage != NULL && pagedir_is_dirty (t->pagedir, page))
+      void *kpage = pagedir_get_page (t->pagedir, page);
+      if (pagedir_is_dirty (t->pagedir, page))
         {
           file_seek (mapid->file, page_elem->offset);
           file_write (mapid->file, kpage, page_elem->bytes_read);
+          //pagedir_clear_page (t->pagedir, page);
+          //remove_page_elem (&t->supplemental_page_table, page_elem);
         }
 
-      /* TODO: Remove page_elem from SPT abd free it. */
+      /* TODO: Remove page_elem from SPT and free it. */
     }
   file_close (mapid->file);
   filesys_release ();

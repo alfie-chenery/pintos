@@ -23,5 +23,6 @@ struct page_elem *create_page_elem (void *, struct file *, size_t,
 bool contains_vaddr (struct hash *, void *);
 void allocate_frame (void *);
 struct page_elem *get_page_elem (struct hash *, void *);
+void remove_page_elem (struct hash *, struct page_elem *);
 
 #endif

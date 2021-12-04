@@ -85,6 +85,14 @@ get_page_elem (struct hash *supplemental_hash_table, void *vaddr)
   return hash_entry (elem, struct page_elem, elem);
 }
 
+/* Remove a page_elem from the supplemental page table. */
+void
+remove_page_elem (struct hash *supplemental_page_table, struct page_elem *page)
+{
+  frame_table_free_user_page (page->frame);
+  free (hash_delete (supplemental_page_table, &page->elem));
+}
+
 /* Lazy allocation of a frame from page fault handler */
 void 
 allocate_frame (void *fault_addr)
@@ -117,7 +125,7 @@ allocate_frame (void *fault_addr)
         }
     }
 
-  page.frame = kpage;
+  (&page)->frame = kpage;
 
   filesys_acquire ();
   file_seek (page.file, page.offset);
