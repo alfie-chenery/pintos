@@ -157,6 +157,13 @@ page_fault (struct intr_frame *f)
 
   if (contains_vaddr (&thread_current ()->supplemental_page_table, page))
    {
+      struct page_elem *page_elem = 
+          get_page_elem (&thread_current ()->supplemental_page_table, page);
+
+      /* Tried writing to read only memory. */
+      if (write && !page_elem->writable)
+        exit_util (KILLED);
+
       // printf ("%p\n", page);
       allocate_frame (page);
       return;

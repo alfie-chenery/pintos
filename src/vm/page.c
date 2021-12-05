@@ -16,7 +16,7 @@ static unsigned
 page_hash (const struct hash_elem *e, void *aux UNUSED)
 {
   void *vaddr = hash_entry (e, struct page_elem, elem)->vaddr;
-  return hash_bytes (&vaddr, sizeof (vaddr));
+  return hash_int ((int) vaddr);
 }
 
 /* Compares two page_elem. */
@@ -90,8 +90,8 @@ get_page_elem (struct hash *supplemental_hash_table, void *vaddr)
 void
 remove_page_elem (struct hash *supplemental_page_table, struct page_elem *page)
 {
-  frame_table_free_user_page (page->frame);
-  free (hash_delete (supplemental_page_table, &page->elem));
+  struct hash_elem *elem = hash_delete (supplemental_page_table, &page->elem);
+  ASSERT (elem != NULL);
 }
 
 /* Lazily allocates a stack page for the processes exceeding one page of memory. */

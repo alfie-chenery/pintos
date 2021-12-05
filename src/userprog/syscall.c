@@ -474,8 +474,8 @@ munmap_util (struct mapid_elem *mapid)
         {
           file_seek (mapid->file, page_elem->offset);
           file_write (mapid->file, kpage, page_elem->bytes_read);
-          //pagedir_clear_page (t->pagedir, page);
-          //remove_page_elem (&t->supplemental_page_table, page_elem);
+          pagedir_clear_page (t->pagedir, page);
+          remove_page_elem (&t->supplemental_page_table, page_elem);
         }
 
       /* TODO: Remove page_elem from SPT and free it. */
