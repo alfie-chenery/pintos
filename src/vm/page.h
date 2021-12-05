@@ -2,6 +2,7 @@
 #define __VM_PAGE_H
 
 #include "lib/kernel/hash.h"
+#include "threads/thread.h"
 
 /* Stores an entry in the supplemental page table. */
 struct page_elem
@@ -24,5 +25,7 @@ bool contains_vaddr (struct hash *, void *);
 void allocate_frame (void *);
 struct page_elem *get_page_elem (struct hash *, void *);
 void remove_page_elem (struct hash *, struct page_elem *);
+struct page_elem *create_page_elem_only_vaddr (void *vaddr);
+void allocate_stack_page (struct thread *, void *);
 
 #endif

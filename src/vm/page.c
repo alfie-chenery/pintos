@@ -3,6 +3,7 @@
 #include "threads/malloc.h"
 #include "vm/frame.h"
 #include "threads/palloc.h"
+#include "threads/vaddr.h"
 #include "userprog/syscall.h"
 #include "userprog/process.h"
 #include <stdio.h>
@@ -91,6 +92,36 @@ remove_page_elem (struct hash *supplemental_page_table, struct page_elem *page)
 {
   frame_table_free_user_page (page->frame);
   free (hash_delete (supplemental_page_table, &page->elem));
+}
+
+/* Lazily allocates a stack page for the processes exceeding one page of memory. */
+void 
+allocate_stack_page (struct thread *t, void *fault_addr)
+{
+  ASSERT (is_user_vaddr (fault_addr));
+
+  void *rnd_addr = pg_round_down (fault_addr);
+  struct hash supplemental_page_table = t->supplemental_page_table;
+  struct page_elem *page = create_page_elem_only_vaddr (rnd_addr);
+  insert_supplemental_page_entry(&supplemental_page_table, page);
+
+  uint8_t *kpage = frame_table_get_user_page (PAL_ZERO);
+  if (kpage == NULL)
+    exit_util (KILLED);
+  if (!install_page (rnd_addr, kpage, true))
+    frame_table_free_user_page (kpage);
+}
+
+/* Smart constructor to create a page elem using only a virtual address */
+struct page_elem * 
+create_page_elem_only_vaddr (void *vaddr)
+{
+  struct page_elem *page = malloc (sizeof (struct page_elem));
+  if (page == NULL)
+    return page;
+
+  page->vaddr = vaddr;
+  return page;
 }
 
 /* Lazy allocation of a frame from page fault handler */

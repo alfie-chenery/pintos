@@ -22,7 +22,6 @@
 #include "vm/frame.h"
 #include "vm/page.h"
 
-#define MAX_COMMAND_LINE_PARAMS 128
 #define USER_STACK_PAGE_SIZE 4096
 #define USER_STACK_BASE_SIZE 12
 
@@ -728,4 +727,4 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
-}
+} 

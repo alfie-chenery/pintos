@@ -9,6 +9,10 @@
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
 
+#define KB_TO_BYTES 1024
+#define MAX_USER_PROCESS_STACK_SPACE (8 * KB_TO_BYTES * KB_TO_BYTES)
+
+
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
@@ -160,6 +164,23 @@ page_fault (struct intr_frame *f)
       // ASSERT (f->eip != NULL);
       // f->eip ();
       // NOT_REACHED ();   
+   }
+
+   // check to see if invalid stack access is causing page fault
+   // if supplemental page table does not contain the fault_addr
+   // TODO: remove this check later
+   if (!contains_vaddr (&thread_current ()->supplemental_page_table, page))
+   {
+      if ((PHYS_BASE - page <= MAX_USER_PROCESS_STACK_SPACE 
+           && fault_addr >= f->esp - 32)
+           && is_user_vaddr (fault_addr))
+      {
+         // remove thread_current () from function call
+         allocate_stack_page (thread_current (), fault_addr);
+         return;
+      }
+      else
+         exit_util (KILLED);
    }
 
   /* To implement virtual memory, delete the rest of the function
