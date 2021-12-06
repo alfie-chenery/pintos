@@ -366,6 +366,9 @@ process_exit (void)
       free (mapid);
     }
 
+  /* Destroying the supplemental page table. */
+  supplemental_page_table_destroy (&cur->supplemental_page_table);
+
   uint32_t *pd;
 
   /* Destroy the current process's page directory and switch back
@@ -677,6 +680,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     if (page == NULL)
       return false;
 
+    page->rox = true;
     insert_supplemental_page_entry(&supplemental_page_table, page);
 
     /* Advance. */

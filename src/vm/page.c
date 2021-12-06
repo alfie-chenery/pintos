@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include "filesys/file.h"
 #include "userprog/pagedir.h"
+#include "vm/share.h"
 #include <string.h>
 
 /* Calculates the hash for a page_elem. */
@@ -61,6 +62,7 @@ create_page_elem (void *vaddr, struct file *file, size_t offset,
   page->bytes_read = bytes_read;
   page->zero_bytes = zero_bytes;
   page->writable = writable;
+  page->rox = false;
   return page;
 }
 
@@ -109,7 +111,10 @@ allocate_stack_page (struct thread *t, void *fault_addr)
   if (kpage == NULL)
     exit_util (KILLED);
   if (!install_page (rnd_addr, kpage, true))
-    frame_table_free_user_page (kpage);
+    {
+      frame_table_free_user_page (kpage);
+      exit_util (KILLED);
+    }
 }
 
 /* Smart constructor to create a page elem using only a virtual address */
@@ -121,7 +126,27 @@ create_page_elem_only_vaddr (void *vaddr)
     return page;
 
   page->vaddr = vaddr;
+  page->rox = false;
   return page;
+}
+
+/* Takes a hash_elem and frees the resources associated with the corresponding
+   page_elem. */
+static void
+destroy_hash_elem (struct hash_elem *e, void *aux UNUSED)
+{
+  struct page_elem *page_elem = hash_entry (e, struct page_elem, elem);
+  if (page_elem->rox)
+    pagedir_clear_page (thread_current ()->pagedir, page_elem->vaddr);
+
+  /* TODO: finish other cases. */
+}
+
+/* Destroys supplemental page table and deallocates all resources. */
+void
+supplemental_page_table_destroy (struct hash *supplemental_page_table)
+{
+  hash_apply (supplemental_page_table, destroy_hash_elem);
 }
 
 /* Lazy allocation of a frame from page fault handler */
@@ -139,15 +164,33 @@ allocate_frame (void *fault_addr)
   ASSERT (elem != NULL);
   page = *hash_entry (elem, struct page_elem, elem);
 
+  uint8_t *kpage;
+
+  /* Fault occured when trying to read a rox. Get a frame from share table
+     rather than frame table. */
+  if (page.rox)
+    {
+      file_seek (page.file, page.offset);
+      kpage = get_frame_for_rox (&page);
+
+      /* Add the page to the process's address space. */
+      if (!install_page (page.vaddr, kpage, page.writable))
+        {
+          free_frame_for_rox (page.file);
+          exit_util (KILLED);
+        }
+
+      return;
+    }
+      
   // 
-  uint8_t *kpage = pagedir_get_page (t->pagedir, page.vaddr);
+  kpage = pagedir_get_page (t->pagedir, page.vaddr);
   if (kpage == NULL)
     {
       /* Get a new page of memory. */
       kpage = frame_table_get_user_page (0);
       if (kpage == NULL)
         exit_util (KILLED);
-
       /* Add the page to the process's address space. */
       if (!install_page (page.vaddr, kpage, page.writable))
         {
@@ -169,7 +212,7 @@ allocate_frame (void *fault_addr)
       frame_table_free_user_page (kpage);
       exit_util (KILLED);
     }
-  memset (kpage + page.bytes_read, 0, page.bytes_read);
+  memset (kpage + page.bytes_read, 0, page.zero_bytes);
   
   // void *kpage = frame_table_get_user_page (PAL_ZERO);
   // if (kpage == NULL)

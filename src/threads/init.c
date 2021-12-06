@@ -29,6 +29,7 @@
 #include "userprog/syscall.h"
 #include "userprog/tss.h"
 #include "vm/frame.h"
+#include "vm/share.h"
 #else
 #include "tests/threads/tests.h"
 #endif
@@ -119,6 +120,7 @@ main (void)
   /* Initialize virtual memory. */
 #ifdef USERPROG
   frame_table_init ();
+  share_table_init ();
 #endif
 
   /* Start thread scheduler and enable interrupts. */
