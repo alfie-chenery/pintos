@@ -680,7 +680,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     if (page == NULL)
       return false;
 
-    page->rox = true;
+    if (!writable)
+      page->rox = true;
     insert_supplemental_page_entry(&supplemental_page_table, page);
 
     /* Advance. */
