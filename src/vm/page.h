@@ -8,7 +8,6 @@
 struct page_elem
   {
     void *vaddr;             /* User virtual address. */
-    void *frame;             /* Frame in kernel virtual memory. */
     struct file *file;       /* File pointer to file */
     size_t offset;           /* Offset from which to start loading */
     size_t bytes_read;       /* Number of bytes read from file */
@@ -18,6 +17,7 @@ struct page_elem
     struct hash_elem elem;   /* To create a hash table. */
   };
 
+/* TODO: Maybe remove struct hash * from function def. */
 void supplemental_page_table_init (struct hash *);
 void insert_supplemental_page_entry (struct hash *, struct page_elem *);
 struct page_elem *create_page_elem (void *, struct file *, size_t, 
@@ -27,7 +27,7 @@ void allocate_frame (void *);
 struct page_elem *get_page_elem (struct hash *, void *);
 void remove_page_elem (struct hash *, struct page_elem *);
 struct page_elem *create_page_elem_only_vaddr (void *vaddr);
-void allocate_stack_page (struct thread *, void *);
+void allocate_stack_page (void *);
 void supplemental_page_table_destroy (struct hash *);
 
 #endif

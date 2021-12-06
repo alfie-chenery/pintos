@@ -6,12 +6,10 @@
 #include "threads/thread.h"
 #include "userprog/syscall.h"
 #include "vm/page.h"
+#include "vm/frame.h"
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
-
-#define KB_TO_BYTES 1024
-#define MAX_USER_PROCESS_STACK_SPACE (8 * KB_TO_BYTES * KB_TO_BYTES)
-
+#include "userprog/process.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -153,7 +151,6 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
   void *page = pg_round_down (fault_addr);
-  //printf ("f->eip = %p, fault_addr = %p\n", f->eip, fault_addr);
 
   if (contains_vaddr (&thread_current ()->supplemental_page_table, page))
    {
@@ -172,23 +169,23 @@ page_fault (struct intr_frame *f)
       // f->eip ();
       // NOT_REACHED ();   
    }
+  
+  /* Check if stack overflow has caused the page fault. */
+  if ((reserved_for_stack (fault_addr) 
+       && fault_addr >= f->esp - 32)
+       && is_user_vaddr (fault_addr))
+    {
+      uint8_t *kpage = frame_table_get_user_page (0);
+      if (kpage == NULL)
+        exit_util (KILLED);
+      if (!install_page (page, kpage, true))
+        {
+          frame_table_free_user_page (kpage);
+          exit_util (KILLED);
+        }
 
-   // check to see if invalid stack access is causing page fault
-   // if supplemental page table does not contain the fault_addr
-   // TODO: remove this check later
-   if (!contains_vaddr (&thread_current ()->supplemental_page_table, page))
-   {
-      if ((PHYS_BASE - page <= MAX_USER_PROCESS_STACK_SPACE 
-           && fault_addr >= f->esp - 32)
-           && is_user_vaddr (fault_addr))
-      {
-         // remove thread_current () from function call
-         allocate_stack_page (thread_current (), fault_addr);
-         return;
-      }
-      else
-         exit_util (KILLED);
-   }
+      return;
+    }
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to

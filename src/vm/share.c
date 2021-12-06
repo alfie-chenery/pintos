@@ -13,7 +13,7 @@ struct share_elem
   {
     struct file *file;           /* The file pointer. */
     int bytes_read;              /* The bytes read from the file. */
-    struct frame_elem *frame;    /* The allocated frame. */
+    void *frame;                 /* The allocated frame. */
     int cnt;                     /* Number of threads using this frame. */
     struct hash_elem elem;       /* To craete a hash table. */
   };
@@ -72,12 +72,11 @@ get_frame_if_exists (struct page_elem *page_elem)
   share_elem.file = page_elem->file;
   share_elem.bytes_read = page_elem->bytes_read;
 
-  struct share_elem *ans = NULL;
   struct hash_elem *e = hash_find (&share_table, &share_elem.elem);
   if (e == NULL)
     return NULL;
 
-  ans = hash_entry (e, struct share_elem, elem);
+  struct share_elem *ans = hash_entry (e, struct share_elem, elem);
   ans->cnt++;
   return ans->frame;
 }
@@ -133,20 +132,29 @@ done:
 /* Decrements the open count for the frame associated for a file. Deallocates 
    the frame if no one has it open. */
 void
-free_frame_for_rox (struct file *file UNUSED)
+free_frame_for_rox (struct page_elem *page_elem)
 {
-  struct share_elem share_elem;
-  share_elem.file = file;
+  struct share_elem find_elem;
+  find_elem.file = page_elem->file;
+  find_elem.bytes_read = page_elem->bytes_read;
 
   lock_acquire (&share_table_lock);
 
-  /* Looking for the share_elem in the hash table. */
-  struct hash_elem *e = hash_find (&share_table, &share_elem.elem);
+  /* Looking for the share_elem in the hash table which corresponds to the
+     passed page_elem. */
+  struct hash_elem *e = hash_find (&share_table, &find_elem.elem);
   ASSERT (e != NULL);
-  share_elem = *hash_entry (e, struct share_elem, elem);
+  struct share_elem *share_elem = hash_entry (e, struct share_elem, elem);
 
-  /* Decrementing open count by 1 and removing the entry from the thread's page 
-     directory. */
-  /* TODO: change to a pointer and free this. */
-  share_elem.cnt--;
+  /* Decrementing open count by 1 and freeing if it has become equal to 0. */
+  share_elem->cnt--;
+  if (share_elem->cnt == 0)
+    {
+      hash_delete (&share_table, &share_elem->elem);
+      free (share_elem->file);
+      frame_table_free_user_page (share_elem->frame);
+      free (share_elem);
+    }
+
+  lock_release (&share_table_lock);
 }

@@ -24,6 +24,8 @@
 
 #define USER_STACK_PAGE_SIZE 4096
 #define USER_STACK_BASE_SIZE 12
+#define KB_TO_BYTES 1024
+#define MAX_USER_PROCESS_STACK_SPACE (8 * KB_TO_BYTES * KB_TO_BYTES)
 
 /* Creates a user_elem for a new process */
 static struct user_elem *
@@ -353,7 +355,6 @@ process_exit (void)
       list_remove (elem);
       free (fd_elem);
     }
-  file_close (cur->loaded_file);
   filesys_release ();
 
   /* Unmapping any mapped files. */
@@ -368,6 +369,11 @@ process_exit (void)
 
   /* Destroying the supplemental page table. */
   supplemental_page_table_destroy (&cur->supplemental_page_table);
+
+  /* Closing the rox opened on load. */
+  filesys_acquire ();
+  file_close (cur->loaded_file);
+  filesys_release ();
 
   uint32_t *pd;
 
@@ -733,3 +739,11 @@ install_page (void *upage, void *kpage, bool writable)
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 } 
+
+/* Checks if an address is reserved for the stack. */
+bool
+reserved_for_stack (void *vaddr)
+{
+  return vaddr + MAX_USER_PROCESS_STACK_SPACE >= PHYS_BASE &&
+         vaddr <= PHYS_BASE;
+}

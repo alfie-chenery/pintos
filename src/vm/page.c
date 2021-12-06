@@ -56,7 +56,6 @@ create_page_elem (void *vaddr, struct file *file, size_t offset,
     return page;
 
   page->vaddr = vaddr;
-  page->frame = NULL;
   page->file = file;
   page->offset = offset;
   page->bytes_read = bytes_read;
@@ -96,16 +95,18 @@ remove_page_elem (struct hash *supplemental_page_table, struct page_elem *page)
   ASSERT (elem != NULL);
 }
 
-/* Lazily allocates a stack page for the processes exceeding one page of memory. */
+/* Lazily allocates a stack page for the processes exceeding one page of 
+   memory. */
 void 
-allocate_stack_page (struct thread *t, void *fault_addr)
+allocate_stack_page (void *fault_addr)
 {
   ASSERT (is_user_vaddr (fault_addr));
 
+  struct thread *t = thread_current ();
   void *rnd_addr = pg_round_down (fault_addr);
   struct hash supplemental_page_table = t->supplemental_page_table;
   struct page_elem *page = create_page_elem_only_vaddr (rnd_addr);
-  insert_supplemental_page_entry(&supplemental_page_table, page);
+  insert_supplemental_page_entry (&supplemental_page_table, page);
 
   uint8_t *kpage = frame_table_get_user_page (PAL_ZERO);
   if (kpage == NULL)
@@ -136,55 +137,69 @@ static void
 destroy_hash_elem (struct hash_elem *e, void *aux UNUSED)
 {
   struct page_elem *page_elem = hash_entry (e, struct page_elem, elem);
-  if (page_elem->rox)
-    pagedir_clear_page (thread_current ()->pagedir, page_elem->vaddr);
+  void *kpage = pagedir_get_page (thread_current ()->pagedir, page_elem->vaddr);
 
-  /* TODO: finish other cases. */
+  /* Checking if there is any mapped frame for the current page. If there is a
+     mapped frame then free it. */
+  if (kpage != NULL)
+    {
+      if (page_elem->rox)
+        {
+          file_seek (page_elem->file, page_elem->offset);
+          free_frame_for_rox (page_elem);
+        }
+      else
+        frame_table_free_user_page (kpage);
+    }
+  
+  /* Unmaps the page from current thread's page directory and free the struct 
+     page_elem since it was malloced on the heap. */
+  pagedir_clear_page (thread_current ()->pagedir, page_elem->vaddr);
+  free (page_elem);
 }
 
 /* Destroys supplemental page table and deallocates all resources. */
 void
 supplemental_page_table_destroy (struct hash *supplemental_page_table)
 {
-  hash_apply (supplemental_page_table, destroy_hash_elem);
+  hash_destroy (supplemental_page_table, destroy_hash_elem);
 }
 
-/* Lazy allocation of a frame from page fault handler */
+/* Lazy allocation of a frame from page fault handler. This function must only 
+   be called when a file needs to be loaded and not when the staCK needs to be 
+   grown. */
 void 
 allocate_frame (void *fault_addr)
 {
-  // 
   struct thread *t = thread_current ();
   struct hash supplemental_page_table = t->supplemental_page_table;
   struct page_elem page;
   page.vaddr = fault_addr;
 
-  // 
+  /* Find the page_elem entry in the supplemental page table of the current 
+     thread for the fault address. */
   struct hash_elem *elem = hash_find (&supplemental_page_table, &page.elem);
   ASSERT (elem != NULL);
   page = *hash_entry (elem, struct page_elem, elem);
-
-  uint8_t *kpage;
-
-  /* Fault occured when trying to read a rox. Get a frame from share table
-     rather than frame table. */
+  
   if (page.rox)
     {
+      /* Fault occured when trying to read a rox. Get a frame from share table
+         rather than frame table. */
       file_seek (page.file, page.offset);
-      kpage = get_frame_for_rox (&page);
+      uint8_t *kpage = get_frame_for_rox (&page);
 
       /* Add the page to the process's address space. */
       if (!install_page (page.vaddr, kpage, page.writable))
         {
-          free_frame_for_rox (page.file);
+          free_frame_for_rox (&page);
           exit_util (KILLED);
         }
 
       return;
     }
       
-  // 
-  kpage = pagedir_get_page (t->pagedir, page.vaddr);
+  uint8_t *kpage = pagedir_get_page (t->pagedir, page.vaddr);
   if (kpage == NULL)
     {
       /* Get a new page of memory. */
@@ -199,8 +214,7 @@ allocate_frame (void *fault_addr)
         }
     }
 
-  (&page)->frame = kpage;
-
+  /* Read the contents of the file into the frame. */
   filesys_acquire ();
   file_seek (page.file, page.offset);
   int bytes_read = file_read (page.file, kpage, page.bytes_read);
@@ -213,22 +227,4 @@ allocate_frame (void *fault_addr)
       exit_util (KILLED);
     }
   memset (kpage + page.bytes_read, 0, page.zero_bytes);
-  
-  // void *kpage = frame_table_get_user_page (PAL_ZERO);
-  // if (kpage == NULL)
-  //   exit_util (KILLED);
-
-  // // 
-  // if (!install_page (page.vaddr, kpage, page.writable))
-  //   {
-  //     frame_table_free_user_page (kpage);
-  //     exit_util (KILLED);
-  //   }
-
-  // // 
-  // if (file_read (page.file, kpage, page.bytes_read) != (int) page.bytes_read)
-  //   {
-  //     frame_table_free_user_page (kpage);
-  //     exit_util (KILLED);
-  //   }
 }
