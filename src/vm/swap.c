@@ -23,7 +23,7 @@ static struct hash swap_table;
 static unsigned
 hash_swap_elem (const struct hash_elem *e, void *aux UNUSED) 
 {
-  size_t index = hash_entry (e, struct swap_elem, elem)->index;
+  size_t index = hash_entry (e, struct swap_slot, elem)->index;
   return hash_int ((int) index);
 }
 
@@ -33,8 +33,8 @@ hash_swap_less (const struct hash_elem *a,
                const struct hash_elem *b,
                void *aux UNUSED) 
 {
-    size_t index1 = hash_entry (a, struct swap_elem, elem)->index;
-    size_t index2 = hash_entry (b, struct swap_elem, elem)->index;
+    size_t index1 = hash_entry (a, struct swap_slot, elem)->index;
+    size_t index2 = hash_entry (b, struct swap_slot, elem)->index;
     return index1 < index2;
 }
 
@@ -141,6 +141,6 @@ free_swap_elem (size_t index)
   lock_release (&swap_lock);
 
   /* Freeing all resources used by the swap_elem */
-  struct swap_slot *elem_free = hash_entry (e, struct swap_elem, elem);
+  struct swap_slot *elem_free = hash_entry (e, struct swap_slot, elem);
   free(elem_free);
 }
