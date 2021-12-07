@@ -7,18 +7,17 @@
 
 #define SECTORS_PER_PAGE (PGSIZE / BLOCK_SECTOR_SIZE)
 
-struct swap_table 
-  {
-    struct hash table;          /* Used to initialise the swap table. */
-    struct block *swap_block;   /* Block for swap space on disk */
-    struct bitmap *used_slots;  /* Tracking used slots */
-  };
+/* Block for swap space on disk */          
+static struct block *swap_block;   
+
+/* Tracking used slots */
+static struct bitmap *used_slots;  
 
 /* Global lock for the swap table. */
-static struct lock swap_table_lock;
+static struct lock swap_lock;
 
 /* The global swap table. */
-static struct swap_table swap_tbl;
+static struct hash swap_table;
 
 /* Calculates the hash for a swap_elem. */
 static unsigned
@@ -43,11 +42,12 @@ hash_swap_less (const struct hash_elem *a,
 void
 swap_table_init (void) 
 {
-    lock_init (&swap_table_lock);
-    hash_init (&swap_tbl.table, hash_swap_elem, hash_swap_less, NULL);
-    swap_tbl.swap_block = block_get_role (BLOCK_SWAP);
-    swap_tbl.used_slots = bitmap_create 
-                    (block_size (swap_tbl.swap_block) / SECTORS_PER_PAGE);
+    lock_init (&swap_lock);
+    hash_init (&swap_table, hash_swap_elem, hash_swap_less, NULL);
+    swap_block = block_get_role (BLOCK_SWAP);
+    used_slots = bitmap_create 
+                    (block_size (swap_block) / SECTORS_PER_PAGE);
+    ASSERT (used_slots != NULL);
 }
 
 /* Writes the kpage to the swap slot indexed by the given index. */
@@ -59,7 +59,7 @@ write_to_swap (size_t index, void *kpage)
     {
       block_sector_t sector = (block_sector_t) (index * SECTORS_PER_PAGE + i);
       block_write 
-        (swap_tbl.swap_block, sector, kpage + (i * BLOCK_SECTOR_SIZE));
+        (swap_block, sector, kpage + (i * BLOCK_SECTOR_SIZE));
     }
 }
 
@@ -72,7 +72,7 @@ read_into_kpage (size_t slot_index, void *kpage)
   for (int i = 0; i < SECTORS_PER_PAGE; i++) 
   {
     block_sector_t sector = (block_sector_t) (slot_index * SECTORS_PER_PAGE + i);
-    block_read(swap_tbl.swap_block, sector, kpage + (i * BLOCK_SECTOR_SIZE));
+    block_read(swap_block, sector, kpage + (i * BLOCK_SECTOR_SIZE));
   }
 }
 
@@ -81,71 +81,66 @@ read_into_kpage (size_t slot_index, void *kpage)
 void
 swap_kpage_out (size_t index, void *kpage) 
 {
-  lock_acquire (&swap_table_lock);
+  lock_acquire (&swap_lock);
   /* set the bit at index of used slots bitmaps to false. */
   /* Frees that slot for new pages. */
-  bitmap_set (swap_tbl.used_slots, index, false);
+  bitmap_set (used_slots, index, false);
 
   /* Assert the swap tables bit at the index is set to false */
-  ASSERT (!bitmap_test (swap_tbl.used_slots, index));
+  ASSERT (!bitmap_test (used_slots, index));
 
   /* Remove corresponding swap entry from swap table. */
-  struct swap_elem del;
+  struct swap_slot del;
   del.index = index;
-  ASSERT (!hash_delete (&swap_tbl.table, &del.elem));
-  lock_release (&swap_table_lock);
+  ASSERT (!hash_delete (&swap_table, &del.elem));
 
   /* Reading the contents at the index into the page */
   read_into_kpage (index, kpage);
+  lock_release (&swap_lock);
 }
 
 /* Creates a new entry in the swap table with the given thread and user page. 
    Copies the given kernel page into a free swap slot. 
    Returns the index of that swap slot. */
 size_t
-swap_kpage_in (struct thread *parent_thread, void *upage, void *kpage) 
+swap_kpage_in (void *kpage) 
 {
-  struct swap_elem *elem = malloc (sizeof (struct swap_elem));
+  struct swap_slot *elem = malloc (sizeof (struct swap_slot));
   ASSERT (elem);
   
-  lock_acquire (&swap_table_lock);
+  lock_acquire (&swap_lock);
   /* find the first unused slot by searching for first bit set to false */
-  size_t idx = bitmap_scan_and_flip (swap_tbl.used_slots, 0, 1, false);
+  size_t idx = bitmap_scan_and_flip (used_slots, 0, 1, false);
   ASSERT (idx != BITMAP_ERROR);
   
-  elem->parent_thread = parent_thread;
   elem->index = idx;
-  elem->page = upage;
   
-  struct hash_elem *e = hash_insert (&swap_tbl.table, &elem->elem);
+  struct hash_elem *e = hash_insert (&swap_table, &elem->elem);
   ASSERT (!e);
   
-  lock_release (&swap_table_lock);
   write_to_swap (elem->index, kpage);
-  /* Free the page */
-  palloc_free_page (kpage);
-  
+  lock_release (&swap_lock);
   return idx;
 }
 
 void
 free_swap_elem (size_t index) 
 {
-  lock_acquire (&swap_table_lock);
+  lock_acquire (&swap_lock);
   
-  bitmap_set (swap_tbl.used_slots, index, false);
+  bitmap_set (used_slots, index, false);
   /* Assert the swap tables bit at the index is set to false */
-  ASSERT (!bitmap_test (swap_tbl.used_slots, index));
+  ASSERT (!bitmap_test (used_slots, index));
   
-  struct swap_elem elem;
+  struct swap_slot elem;
   elem.index = index;
   
-  struct hash_elem *e = hash_delete (&swap_tbl.table, &elem.elem);
-  ASSERT(e);
+  struct hash_elem *e = hash_delete (&swap_table, &elem.elem);
+  ASSERT (e != NULL);
 
-  lock_release (&swap_table_lock);
+  lock_release (&swap_lock);
 
   /* Freeing all resources used by the swap_elem */
-  struct swap_elem *elem_free = hash_entry (e, struct swap_elem, elem);
+  struct swap_slot *elem_free = hash_entry (e, struct swap_elem, elem);
   free(elem_free);
 }
