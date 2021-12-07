@@ -93,6 +93,8 @@ remove_page_elem (struct hash *supplemental_page_table, struct page_elem *page)
 {
   struct hash_elem *elem = hash_delete (supplemental_page_table, &page->elem);
   ASSERT (elem != NULL);
+  free (hash_entry (elem, struct page_elem, elem));
+  /* TODO: Free the removed element. */
 }
 
 /* Lazily allocates a stack page for the processes exceeding one page of 
@@ -182,6 +184,7 @@ allocate_frame (void *fault_addr)
   ASSERT (elem != NULL);
   page = *hash_entry (elem, struct page_elem, elem);
   
+  /* TODO: fix the commented frees. */
   if (page.rox)
     {
       /* Fault occured when trying to read a rox. Get a frame from share table
@@ -192,7 +195,7 @@ allocate_frame (void *fault_addr)
       /* Add the page to the process's address space. */
       if (!install_page (page.vaddr, kpage, page.writable))
         {
-          free_frame_for_rox (&page);
+          //free_frame_for_rox (&page);
           exit_util (KILLED);
         }
 
@@ -209,7 +212,7 @@ allocate_frame (void *fault_addr)
       /* Add the page to the process's address space. */
       if (!install_page (page.vaddr, kpage, page.writable))
         {
-          frame_table_free_user_page (kpage);
+          //frame_table_free_user_page (kpage);
           exit_util (KILLED);
         }
     }
@@ -223,7 +226,7 @@ allocate_frame (void *fault_addr)
   /* Load data into the page. */
   if (bytes_read != (int) page.bytes_read)
     {
-      frame_table_free_user_page (kpage);
+      //frame_table_free_user_page (kpage);
       exit_util (KILLED);
     }
   memset (kpage + page.bytes_read, 0, page.zero_bytes);

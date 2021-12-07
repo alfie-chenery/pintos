@@ -387,10 +387,10 @@ close_h (struct intr_frame *f)
 /* Maps a file into virtual memory. The passed file descriptor must be valid, 
    the file must not have length 0. The passed address *addr must be page 
    aligned and the range of pages mapped must not overlap with any existing
-   pages. Moreover, addr cannot be NULL. If no pre condition is violated, then 
-   the function returns a "mapping ID" that uniquely identifies the mapping 
-   within the process. On failure, it returns -1, which is not otherwise a 
-   valid mapping ID. */
+   pages. Moreover, addr cannot be NULL and cannot be in the reserved stack 
+   space. If no pre condition is violated, then the function returns a 
+   "mapping ID" that uniquely identifies the mapping within the process. On 
+   failure, it returns -1, which is not otherwise a valid mapping ID. */
 static void
 mmap_h (struct intr_frame *f)
 {
@@ -402,6 +402,13 @@ mmap_h (struct intr_frame *f)
   filesys_acquire ();
   int size = file == NULL ? 0 : file_length (file);
   filesys_release ();
+
+  /* Checking that all the covered addresses are valid user addresses and not 
+     saved for the stack. Note that only checking the last address is sufficient
+     since the stack grows from the top to bottom. */
+  void *last_addr = addr + size - 1;
+  if (!is_user_vaddr (last_addr) || reserved_for_stack (last_addr))
+    return;
 
   /* Checking if any pre-condition for mmap has been violated. */
   if (addr == NULL || size == 0 || addr != pg_round_down (addr))
@@ -422,7 +429,9 @@ mmap_h (struct intr_frame *f)
     return;
 
   /* Reopening the file. */
+  filesys_acquire ();
   file = file_reopen (file);
+  filesys_release ();
   if (file == NULL)
     return;
 
