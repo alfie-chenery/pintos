@@ -54,7 +54,7 @@ swap_table_init (void)
 static void
 write_to_swap (size_t index, void *kpage) 
 {
-  ASSERT (!kpage);
+  ASSERT (kpage != NULL);
   for (int i = 0; i < SECTORS_PER_PAGE; i++) 
     {
       block_sector_t sector = (block_sector_t) (index * SECTORS_PER_PAGE + i);

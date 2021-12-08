@@ -3,18 +3,20 @@
 
 #include "lib/kernel/hash.h"
 #include "threads/thread.h"
+#include "vm/frame.h"
 
 /* Stores an entry in the supplemental page table. */
 struct page_elem
   {
-    void *vaddr;             /* User virtual address. */
-    struct file *file;       /* File pointer to file */
-    size_t offset;           /* Offset from which to start loading */
-    size_t bytes_read;       /* Number of bytes read from file */
-    size_t zero_bytes;       /* Number of zero bytes */
-    bool writable;           /* File is writable */
-    bool rox;                /* Is it a read only executable. */
-    struct hash_elem elem;   /* To create a hash table. */
+    void *vaddr;                   /* User virtual address. */
+    struct frame_elem *frame_elem; /* The allocated frame for the page. */
+    struct file *file;             /* File pointer to file */
+    size_t offset;                 /* Offset from which to start loading */
+    size_t bytes_read;             /* Number of bytes read from file */
+    size_t zero_bytes;             /* Number of zero bytes */
+    bool writable;                 /* File is writable */
+    bool rox;                      /* Is it a read only executable. */
+    struct hash_elem elem;         /* To create a hash table. */
   };
 
 /* TODO: Maybe remove struct hash * from function def. */

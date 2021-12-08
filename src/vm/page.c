@@ -62,6 +62,7 @@ create_page_elem (void *vaddr, struct file *file, size_t offset,
   page->zero_bytes = zero_bytes;
   page->writable = writable;
   page->rox = false;
+  page->frame_elem = NULL;
   return page;
 }
 
@@ -130,6 +131,7 @@ create_page_elem_only_vaddr (void *vaddr)
 
   page->vaddr = vaddr;
   page->rox = false;
+  page->frame_elem = NULL;
   return page;
 }
 
@@ -182,18 +184,26 @@ allocate_frame (void *fault_addr)
      thread for the fault address. */
   struct hash_elem *elem = hash_find (&supplemental_page_table, &page.elem);
   ASSERT (elem != NULL);
-  page = *hash_entry (elem, struct page_elem, elem);
+  struct page_elem *page_elem = hash_entry (elem, struct page_elem, elem);
   
+  if (page_elem->frame_elem != NULL)
+    {
+      /* Frame has been swapped. */
+      ASSERT (page_elem->frame_elem->swapped);
+      swap_in_frame (page_elem->frame_elem);
+      return;
+    }
+
   /* TODO: fix the commented frees. */
-  if (page.rox)
+  if (page_elem->rox)
     {
       /* Fault occured when trying to read a rox. Get a frame from share table
          rather than frame table. */
-      file_seek (page.file, page.offset);
-      uint8_t *kpage = get_frame_for_rox (&page);
+      file_seek (page_elem->file, page_elem->offset);
+      uint8_t *kpage = get_frame_for_rox (page_elem);
 
       /* Add the page to the process's address space. */
-      if (!install_page (page.vaddr, kpage, page.writable))
+      if (!install_page (page_elem->vaddr, kpage, page_elem->writable))
         {
           //free_frame_for_rox (&page);
           exit_util (KILLED);
@@ -202,7 +212,7 @@ allocate_frame (void *fault_addr)
       return;
     }
       
-  uint8_t *kpage = pagedir_get_page (t->pagedir, page.vaddr);
+  uint8_t *kpage = pagedir_get_page (t->pagedir, page_elem->vaddr);
   if (kpage == NULL)
     {
       /* Get a new page of memory. */
@@ -210,7 +220,7 @@ allocate_frame (void *fault_addr)
       if (kpage == NULL)
         exit_util (KILLED);
       /* Add the page to the process's address space. */
-      if (!install_page (page.vaddr, kpage, page.writable))
+      if (!install_page (page_elem->vaddr, kpage, page_elem->writable))
         {
           //frame_table_free_user_page (kpage);
           exit_util (KILLED);
@@ -219,15 +229,15 @@ allocate_frame (void *fault_addr)
 
   /* Read the contents of the file into the frame. */
   filesys_acquire ();
-  file_seek (page.file, page.offset);
-  int bytes_read = file_read (page.file, kpage, page.bytes_read);
+  file_seek (page_elem->file, page_elem->offset);
+  int bytes_read = file_read (page_elem->file, kpage, page_elem->bytes_read);
   filesys_release ();
 
   /* Load data into the page. */
-  if (bytes_read != (int) page.bytes_read)
+  if (bytes_read != (int) page_elem->bytes_read)
     {
       //frame_table_free_user_page (kpage);
       exit_util (KILLED);
     }
-  memset (kpage + page.bytes_read, 0, page.zero_bytes);
+  memset (kpage + page_elem->bytes_read, 0, page_elem->zero_bytes);
 }
