@@ -53,15 +53,58 @@ insert_frame (void *frame)
   return frame_elem;
 }
 
-/* EVicts a frame and puts its contents into the swap table. */
+/* Chooses a frame to evict using second chance algorithm. */
+static struct frame_elem *
+choose_frame_to_evict (void)
+{
+  ASSERT (lock_held_by_current_thread (&frame_table_lock));
+
+  /* We check if the beginning of all frames has been accessed recently. If it 
+     has then we put it at the back of the list. Otherwise, we evict it. */
+  while (true)
+    {
+      struct frame_elem *frame_elem = 
+          list_entry (list_begin (&all_frames), struct frame_elem, all_elem);
+      bool is_accessed = false;
+
+      /* Iterate through the owners and check if any of them have accesses the
+         frame recently. */
+      for (struct list_elem *e = list_begin (&frame_elem->owners);
+           e != list_end (&frame_elem->owners);
+           e = list_next (e))
+        {
+          struct thread_list_elem *t = 
+              list_entry (e, struct thread_list_elem, elem);
+          ASSERT (t->t->magic == 0xcd6abf4b);
+          if (pagedir_is_accessed (t->t->pagedir, t->vaddr))
+            is_accessed = true;
+          pagedir_set_accessed (t->t->pagedir, t->vaddr, false);
+        }
+
+      if (!is_accessed)
+        return frame_elem;
+
+      /* Remove the frame from the front and move it to the back. */
+      list_remove (&frame_elem->all_elem);
+      list_push_back (&all_frames, &frame_elem->all_elem);
+    }
+
+  /* We should never reach here. */
+  NOT_REACHED ();
+}
+
+/* Evicts a frame and puts its contents into the swap table. The frame to be
+   evicted is chosen using the second chance algorithm. */
 static void
 evict_frame (void)
 {
   ASSERT (lock_held_by_current_thread (&frame_table_lock));
 
   /* Find a frame to evict. */
-  struct frame_elem *to_evict = 
-      list_entry (list_begin (&all_frames), struct frame_elem, all_elem);
+  struct frame_elem *to_evict = choose_frame_to_evict ();
+
+  ASSERT (!to_evict->swapped);
+  to_evict->swapped = true;
 
   /* Remove the frame from the page directories of all the threads that are 
      using it. */
@@ -76,9 +119,7 @@ evict_frame (void)
     }
 
   /* Swap the contents using the swap table. */
-  ASSERT (!to_evict->swapped);
   to_evict->swap_id = swap_kpage_in (to_evict->frame);
-  to_evict->swapped = true;
 
   /* Remove the frame from the hash table and the all list. */
   list_remove (&to_evict->all_elem);
@@ -104,20 +145,23 @@ frame_table_init (void)
 struct frame_elem *
 frame_table_get_user_page (enum palloc_flags flags, bool writable)
 {
+  lock_acquire (&frame_table_lock);
   void *page = palloc_get_page (PAL_USER | flags);
   
-  lock_acquire (&frame_table_lock);
+  //lock_acquire (&frame_table_lock);
   if (page == NULL)
     {
+      /* TODO: evict frame returns the frame elem so you do not have to palloc again. */
       evict_frame ();
       page = palloc_get_page (PAL_USER | flags);
       ASSERT (page != NULL);
     }
 
   struct frame_elem *frame_elem = insert_frame (page);
-  lock_release (&frame_table_lock);
+  //lock_release (&frame_table_lock);
 
   frame_elem->writable = writable;
+  lock_release (&frame_table_lock);
   return frame_elem;
 }
 
@@ -182,13 +226,14 @@ add_owner (struct frame_elem *frame_elem, void *vaddr)
       swap_in_frame (frame_elem);
     }
 
+  lock_acquire (&frame_table_lock);
   t->t = thread_current ();
   t->vaddr = vaddr;
 
   pagedir_set_page (thread_current ()->pagedir, vaddr, 
                     frame_elem->frame, frame_elem->writable);
 
-  lock_acquire (&frame_table_lock);
+  //lock_acquire (&frame_table_lock);
   list_push_back (&frame_elem->owners, &t->elem);
   lock_release (&frame_table_lock);
 }
@@ -197,6 +242,7 @@ add_owner (struct frame_elem *frame_elem, void *vaddr)
 void
 remove_owner (struct frame_elem *frame_elem)
 {
+  lock_acquire (&frame_table_lock);
   for (struct list_elem *e = list_begin (&frame_elem->owners);
        e != list_end (&frame_elem->owners);
        e = list_next (e))
@@ -207,6 +253,7 @@ remove_owner (struct frame_elem *frame_elem)
         {
           list_remove (&t->elem);
           free (t);
+          lock_release (&frame_table_lock);
           return;
         }
     }
@@ -222,6 +269,7 @@ remove_owner (struct frame_elem *frame_elem)
 void
 free_frame_elem (struct frame_elem *frame_elem)
 {
+  lock_acquire (&frame_table_lock);
   //ASSERT (*((uint8_t *) frame_elem) != 0xcc);
 
   /* Freeing the swap space or the frame pointer. */
@@ -245,11 +293,12 @@ free_frame_elem (struct frame_elem *frame_elem)
   if (!frame_elem->swapped)
     {
       ASSERT (frame_elem->frame != NULL);
-      lock_acquire (&frame_table_lock);
+      //lock_acquire (&frame_table_lock);
       hash_delete (&frame_table, &frame_elem->elem);
       list_remove (&frame_elem->all_elem);
-      lock_release (&frame_table_lock);
+      //lock_release (&frame_table_lock);
     }
 
   free (frame_elem);
+  lock_release (&frame_table_lock);
 }

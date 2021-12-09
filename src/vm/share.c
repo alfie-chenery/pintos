@@ -138,13 +138,13 @@ done:
 void
 free_frame_for_rox (struct page_elem *page_elem)
 {
+  lock_acquire (&share_table_lock);
+
   file_seek (page_elem->file, page_elem->offset);
   //printf ("DEBUG FREE: %p %i %i\n", page_elem->file->inode, page_elem->file->pos, page_elem->bytes_read);
   struct share_elem find_elem;
   find_elem.file = page_elem->file;
   find_elem.bytes_read = page_elem->bytes_read;
-
-  lock_acquire (&share_table_lock);
 
   /* Looking for the share_elem in the hash table which corresponds to the
      passed page_elem. */
@@ -157,7 +157,7 @@ free_frame_for_rox (struct page_elem *page_elem)
   share_elem->cnt--;
   if (share_elem->cnt == 0)
     {
-      hash_delete (&share_table, &share_elem->elem);
+      ASSERT (hash_delete (&share_table, &share_elem->elem));
       free (share_elem->file);
       free_frame_elem (share_elem->frame_elem);
       free (share_elem);

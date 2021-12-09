@@ -94,8 +94,11 @@ remove_page_elem (struct hash *supplemental_page_table, struct page_elem *page)
 {
   struct hash_elem *elem = hash_delete (supplemental_page_table, &page->elem);
   ASSERT (elem != NULL);
-  free (hash_entry (elem, struct page_elem, elem));
-  /* TODO: Free the removed element. */
+  
+  ASSERT (!page->rox);
+  if (page->frame_elem != NULL)
+    free_frame_elem (page->frame_elem);
+  free (page);
 }
 
 /* Smart constructor to create a page elem using only a virtual address. This is
@@ -127,8 +130,8 @@ allocate_stack_page (void *fault_addr)
   struct page_elem *page = create_page_elem_only_vaddr (rnd_addr);
   insert_supplemental_page_entry (&supplemental_page_table, page);
 
-  page->frame_elem = frame_table_get_user_page (0, true);
-  add_owner (page->frame_elem, fault_addr);
+  page->frame_elem = frame_table_get_user_page (PAL_ZERO, true);
+  add_owner (page->frame_elem, rnd_addr);
 }
 
 /* Takes a hash_elem and frees the resources associated with the corresponding
@@ -180,7 +183,8 @@ allocate_frame (void *fault_addr)
   if (page_elem->frame_elem != NULL)
     {
       /* Frame has been swapped. */
-      ASSERT (page_elem->frame_elem->swapped);
+      ASSERT (*(uint8_t *) page_elem->frame_elem != 0xcc);
+      //ASSERT (page_elem->frame_elem->swapped);
       swap_in_frame (page_elem->frame_elem);
     }
 

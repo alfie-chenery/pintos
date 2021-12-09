@@ -4,6 +4,7 @@
 #include <threads/vaddr.h>
 #include <threads/malloc.h>
 #include <threads/palloc.h>
+#include <stdio.h>
 
 #define SECTORS_PER_PAGE (PGSIZE / BLOCK_SECTOR_SIZE)
 
@@ -84,6 +85,7 @@ swap_kpage_out (size_t index, void *kpage)
   /* set the bit at index of used slots bitmaps to false. */
   /* Frees that slot for new pages. */
   bitmap_set (used_slots, index, false);
+  //printf("Slots left: %d\n", bitmap_count(used_slots, 0, bitmap_size(used_slots), false));
 
   /* Assert the swap tables bit at the index is set to false */
   ASSERT (!bitmap_test (used_slots, index));
@@ -108,8 +110,15 @@ swap_kpage_in (void *kpage)
   ASSERT (elem);
   
   lock_acquire (&swap_lock);
+
   /* find the first unused slot by searching for first bit set to false */
   size_t idx = bitmap_scan_and_flip (used_slots, 0, 1, false);
+  size_t count = bitmap_count(used_slots, 0, bitmap_size(used_slots), false);
+  //printf("Slots left: %d\n", count);
+  //if (count <= 905) {
+  //  printf("BREAK HERE\n");
+  //}
+
   ASSERT (idx != BITMAP_ERROR);
   
   elem->index = idx;
