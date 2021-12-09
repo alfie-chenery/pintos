@@ -705,19 +705,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp)
 {
-  uint8_t *kpage;
-  bool success = false;
-
-  kpage = frame_table_get_user_page (PAL_ZERO);
-  if (kpage != NULL)
-    {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
-        *esp = (PHYS_BASE);
-      else
-        frame_table_free_user_page (kpage);
-    }
-  return success;
+  allocate_stack_page (PHYS_BASE - PGSIZE);
+  *esp = PHYS_BASE;
+  return true;
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel
@@ -745,5 +735,5 @@ bool
 reserved_for_stack (void *vaddr)
 {
   return vaddr + MAX_USER_PROCESS_STACK_SPACE >= PHYS_BASE &&
-         vaddr <= PHYS_BASE;
+         is_user_vaddr (vaddr);
 }

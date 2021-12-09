@@ -153,7 +153,8 @@ page_fault (struct intr_frame *f)
   void *page = pg_round_down (fault_addr);
 
   if (contains_vaddr (&thread_current ()->supplemental_page_table, page))
-   {
+    {
+      /* The page has been swapped or not loaded yet. */
       struct page_elem *page_elem = 
           get_page_elem (&thread_current ()->supplemental_page_table, page);
 
@@ -161,40 +162,24 @@ page_fault (struct intr_frame *f)
       if (write && !page_elem->writable)
         exit_util (KILLED);
 
-      // printf ("%p\n", page);
       allocate_frame (page);
-      return;
-      // f->eip = pagedir_get_page(thread_current()->pagedir, f->eip);
-      // ASSERT (f->eip != NULL);
-      // f->eip ();
-      // NOT_REACHED ();   
-   }
+    }
   
-  /* Check if stack overflow has caused the page fault. */
-  if ((reserved_for_stack (fault_addr) 
-       && fault_addr >= f->esp - 32)
-       && is_user_vaddr (fault_addr))
+  else if ((reserved_for_stack (fault_addr) 
+            && fault_addr >= f->esp - 32))
     {
-      uint8_t *kpage = frame_table_get_user_page (0);
-      if (kpage == NULL)
-        exit_util (KILLED);
-      if (!install_page (page, kpage, true))
-        {
-          frame_table_free_user_page (kpage);
-          exit_util (KILLED);
-        }
-
-      return;
+      /* Stack overflow has caused the page fault. */
+      allocate_stack_page (page);
     }
 
-  /* To implement virtual memory, delete the rest of the function
-     body, and replace it with code that brings in the page to
-     which fault_addr refers. */
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
-          fault_addr,
-          not_present ? "not present" : "rights violation",
-          write ? "writing" : "reading",
-          user ? "user" : "kernel");
-  kill (f);
+  else
+    {
+      printf ("Page fault at %p: %s error %s page in %s context.\n",
+              fault_addr,
+              not_present ? "not present" : "rights violation",
+              write ? "writing" : "reading",
+              user ? "user" : "kernel");
+      kill (f);
+    }
 }
 

@@ -483,11 +483,13 @@ munmap_util (struct mapid_elem *mapid)
         {
           file_seek (mapid->file, page_elem->offset);
           file_write (mapid->file, kpage, page_elem->bytes_read);
-          pagedir_clear_page (t->pagedir, page);
-          remove_page_elem (&t->supplemental_page_table, page_elem);
         }
 
+      pagedir_clear_page (t->pagedir, page);
+      remove_page_elem (&t->supplemental_page_table, page_elem);
+
       /* TODO: Remove page_elem from SPT and free it. */
+      /* Free even if not dirty. */
     }
   file_close (mapid->file);
   filesys_release ();
@@ -529,8 +531,10 @@ munmap_h (struct intr_frame *f)
 /* sys_func represents a system call function called by syscall_handler. */
 typedef void sys_func (struct intr_frame *);
 
+#define NUM_SYSCALLS 15
+
 /* Array mapping sys_func to the corresponsing system call numbers. */
-static sys_func *sys_funcs[15] = {
+static sys_func *sys_funcs[NUM_SYSCALLS] = {
   halt_h,
   exit_h,
   exec_h,
@@ -560,5 +564,8 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f) 
 {
+  int syn_no = *get_arg (f, 0);
+  if (syn_no < 0 || syn_no >= NUM_SYSCALLS)
+    exit_util (KILLED);
   sys_funcs[*get_arg (f, 0)] (f);
 }

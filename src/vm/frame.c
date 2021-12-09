@@ -31,8 +31,9 @@ frame_less (const struct hash_elem *a,
   return frame_a < frame_b;
 }
 
-/* Inserts a frame into the frame table. */
-static void
+/* Creates a frame_elem for a pointer to a frame and inserts it into the frame 
+   table and all_frames list. Returns the created frame. */
+static struct frame_elem *
 insert_frame (void *frame)
 {
   ASSERT (lock_held_by_current_thread (&frame_table_lock));
@@ -43,8 +44,13 @@ insert_frame (void *frame)
 
   frame_elem->frame = frame;
   frame_elem->swapped = false;
+  list_init (&frame_elem->owners);
+
+  /* Adding the frame to the frame table and all_frames list. */
   hash_insert (&frame_table, &frame_elem->elem);
-  list_push_back (&all_frames, &frame_elem->all_elem);
+  list_push_back (&all_frames, &frame_elem->all_elem); 
+
+  return frame_elem;
 }
 
 /* EVicts a frame and puts its contents into the swap table. */
@@ -57,35 +63,30 @@ evict_frame (void)
   struct frame_elem *to_evict = 
       list_entry (list_begin (&all_frames), struct frame_elem, all_elem);
 
-  /* TODO: Remove the frame from the page directories of all the owning threads
-     in a thread safe way. */
-  
+  /* Remove the frame from the page directories of all the threads that are 
+     using it. */
+  for (struct list_elem *e = list_begin (&to_evict->owners);
+       e != list_end (&to_evict->owners);
+       e = list_next (e))
+    {
+      struct thread_list_elem *t = 
+          list_entry (e, struct thread_list_elem, elem);
+      pagedir_clear_page (t->t->pagedir, t->vaddr);
+    }
 
   /* Swap the contents using the swap table. */
+  ASSERT (!to_evict->swapped);
   to_evict->swap_id = swap_kpage_in (to_evict->frame);
   to_evict->swapped = true;
 
   /* Remove the frame from the hash table and the all list. */
   list_remove (&to_evict->all_elem);
+  hash_find (&frame_table, &to_evict->elem);
   hash_delete (&frame_table, &to_evict->elem);
 
+  /* Free the physical memory of the frame and mark that in the frame_elem. */
   palloc_free_page (to_evict->frame);
   to_evict->frame = NULL;
-}
-
-/* Deletes a frame from the frame table. */
-static void
-delete_frame (void *frame)
-{
-  struct frame_elem frame_elem;
-  frame_elem.frame = frame;
-
-  lock_acquire (&frame_table_lock);
-  if (hash_find (&frame_table, &frame_elem.elem) == NULL)
-    PANIC ("Could not find the requested frame in the frame table");
-  
-  hash_delete (&frame_table, &frame_elem.elem);
-  lock_release (&frame_table_lock);
 }
 
 /* Initializes the frame table and its lock. */
@@ -97,9 +98,10 @@ frame_table_init (void)
   list_init (&all_frames);
 }
 
-/* Gets a user page and puts it in the frame table. */
-void *
-frame_table_get_user_page (enum palloc_flags flags)
+/* Gets a user page and puts it in the frame table. Returns the frame_elem that 
+   was created. */
+struct frame_elem *
+frame_table_get_user_page (enum palloc_flags flags, bool writable)
 {
   void *page = palloc_get_page (PAL_USER | flags);
   
@@ -111,17 +113,11 @@ frame_table_get_user_page (enum palloc_flags flags)
       ASSERT (page != NULL);
     }
 
-  insert_frame (page);
+  struct frame_elem *frame_elem = insert_frame (page);
   lock_release (&frame_table_lock);
-  return page;
-}
 
-/* Frees a user page and removes it from the frame table. */
-void
-frame_table_free_user_page (void *page)
-{
-  palloc_free_page (page);
-  delete_frame (page);
+  frame_elem->writable = writable;
+  return frame_elem;
 }
 
 /* Swaps back in a frame that was swapped out. */
@@ -150,9 +146,15 @@ swap_in_frame (struct frame_elem *frame_elem)
      data otherwise. */
   swap_kpage_out (frame_elem->swap_id, page);
 
-  /* Add the frame to all the owning thread's page directories. */
-  /* TODO: make this thread safe. */
+  /* Mark that the frame is no longer swapped and update the frame. */
+  frame_elem->swapped = false;
   frame_elem->frame = page;
+
+  /* Insert the frame to the hash table and all list. */
+  list_push_back (&all_frames, &frame_elem->all_elem);
+  hash_insert (&frame_table, &frame_elem->elem);
+
+  /* Add the frame to all the owning thread's page directories. */
   for (struct list_elem *e = list_begin (&frame_elem->owners);
        e != list_end (&frame_elem->owners);
        e = list_next (e))
@@ -161,11 +163,63 @@ swap_in_frame (struct frame_elem *frame_elem)
             list_entry (e, struct thread_list_elem, elem);
         pagedir_set_page (t->t->pagedir, t->vaddr, page, frame_elem->writable);
     }
-
-  /* Insert the frame to the hash table and all list. */
-  list_push_back (&all_frames, &frame_elem->all_elem);
-  hash_insert (&frame_table, &frame_elem->elem);
-
 done:
   lock_release (&frame_table_lock);
+}
+
+/* Adds the running thread to the list of owners of a frame_elem and installs 
+   the page into the thread's page directory. */
+void
+add_owner (struct frame_elem *frame_elem, void *vaddr)
+{
+  struct thread_list_elem *t = malloc (sizeof (struct thread_list_elem));
+  ASSERT (t != NULL);
+  ASSERT (frame_elem->frame != NULL);
+  t->t = thread_current ();
+  t->vaddr = vaddr;
+
+  pagedir_set_page (thread_current ()->pagedir, vaddr, 
+                    frame_elem->frame, frame_elem->writable);
+
+  lock_acquire (&frame_table_lock);
+  list_push_back (&frame_elem->owners, &t->elem);
+  lock_release (&frame_table_lock);
+}
+
+/* Frees a frame_elem and the frame pointer stored inside it. It is assumed that
+   all its owners are already dead so we do not need to clear anything from the 
+   page directory of any thread. */
+void
+free_frame_elem (struct frame_elem *frame_elem)
+{
+  //ASSERT (*((uint8_t *) frame_elem) != 0xcc);
+
+  /* Freeing the swap space or the frame pointer. */
+  if (frame_elem->swapped)
+    free_swap_elem (frame_elem->swap_id);
+  else
+    palloc_free_page (frame_elem->frame);
+
+  /* Free the list of owners of the thread. */
+  while (!list_empty (&frame_elem->owners))
+    {
+      struct list_elem *e = list_begin (&frame_elem->owners);
+      struct thread_list_elem *t = 
+          list_entry (e, struct thread_list_elem, elem);
+      list_remove (&t->elem);
+      free (t);
+    } 
+
+  /* Remove from frame table and all frames if the frame was not currently 
+     swapped. */
+  if (!frame_elem->swapped)
+    {
+      ASSERT (frame_elem->frame != NULL);
+      lock_acquire (&frame_table_lock);
+      hash_delete (&frame_table, &frame_elem->elem);
+      list_remove (&frame_elem->all_elem);
+      lock_release (&frame_table_lock);
+    }
+
+  free (frame_elem);
 }

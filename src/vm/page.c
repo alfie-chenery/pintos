@@ -98,6 +98,22 @@ remove_page_elem (struct hash *supplemental_page_table, struct page_elem *page)
   /* TODO: Free the removed element. */
 }
 
+/* Smart constructor to create a page elem using only a virtual address. This is
+   only called while allocating a stack page. */
+static struct page_elem * 
+create_page_elem_only_vaddr (void *vaddr)
+{
+  struct page_elem *page = malloc (sizeof (struct page_elem));
+  if (page == NULL)
+    return page;
+
+  page->vaddr = vaddr;
+  page->rox = false;
+  page->frame_elem = NULL;
+  page->writable = true;
+  return page;
+}
+
 /* Lazily allocates a stack page for the processes exceeding one page of 
    memory. */
 void 
@@ -111,28 +127,8 @@ allocate_stack_page (void *fault_addr)
   struct page_elem *page = create_page_elem_only_vaddr (rnd_addr);
   insert_supplemental_page_entry (&supplemental_page_table, page);
 
-  uint8_t *kpage = frame_table_get_user_page (PAL_ZERO);
-  if (kpage == NULL)
-    exit_util (KILLED);
-  if (!install_page (rnd_addr, kpage, true))
-    {
-      frame_table_free_user_page (kpage);
-      exit_util (KILLED);
-    }
-}
-
-/* Smart constructor to create a page elem using only a virtual address */
-struct page_elem * 
-create_page_elem_only_vaddr (void *vaddr)
-{
-  struct page_elem *page = malloc (sizeof (struct page_elem));
-  if (page == NULL)
-    return page;
-
-  page->vaddr = vaddr;
-  page->rox = false;
-  page->frame_elem = NULL;
-  return page;
+  page->frame_elem = frame_table_get_user_page (0, true);
+  add_owner (page->frame_elem, fault_addr);
 }
 
 /* Takes a hash_elem and frees the resources associated with the corresponding
@@ -141,23 +137,18 @@ static void
 destroy_hash_elem (struct hash_elem *e, void *aux UNUSED)
 {
   struct page_elem *page_elem = hash_entry (e, struct page_elem, elem);
-  void *kpage = pagedir_get_page (thread_current ()->pagedir, page_elem->vaddr);
-
-  /* Checking if there is any mapped frame for the current page. If there is a
-     mapped frame then free it. */
-  if (kpage != NULL)
-    {
-      if (page_elem->rox)
-        {
-          file_seek (page_elem->file, page_elem->offset);
-          free_frame_for_rox (page_elem);
-        }
-      else
-        frame_table_free_user_page (kpage);
-    }
+  if (page_elem->frame_elem == NULL)
+    goto done;
   
-  /* Unmaps the page from current thread's page directory and free the struct 
-     page_elem since it was malloced on the heap. */
+  /* Call the appropriate free function. */
+  if (page_elem->rox)
+    free_frame_for_rox (page_elem);
+  else
+    free_frame_elem (page_elem->frame_elem);
+  
+done:
+  /* Clear the page directory and free the struct page_elem since it was 
+     malloced on the heap. */
   pagedir_clear_page (thread_current ()->pagedir, page_elem->vaddr);
   free (page_elem);
 }
@@ -191,53 +182,32 @@ allocate_frame (void *fault_addr)
       /* Frame has been swapped. */
       ASSERT (page_elem->frame_elem->swapped);
       swap_in_frame (page_elem->frame_elem);
-      return;
     }
 
-  /* TODO: fix the commented frees. */
-  if (page_elem->rox)
+  else if (page_elem->rox)
     {
       /* Fault occured when trying to read a rox. Get a frame from share table
          rather than frame table. */
       file_seek (page_elem->file, page_elem->offset);
-      uint8_t *kpage = get_frame_for_rox (page_elem);
-
-      /* Add the page to the process's address space. */
-      if (!install_page (page_elem->vaddr, kpage, page_elem->writable))
-        {
-          //free_frame_for_rox (&page);
-          exit_util (KILLED);
-        }
-
-      return;
+      page_elem->frame_elem = get_frame_for_rox (page_elem);
     }
-      
-  uint8_t *kpage = pagedir_get_page (t->pagedir, page_elem->vaddr);
-  if (kpage == NULL)
+
+  else
     {
-      /* Get a new page of memory. */
-      kpage = frame_table_get_user_page (0);
-      if (kpage == NULL)
+      /* Need to allocate a new frame and copy contents from file. */
+      page_elem->frame_elem = 
+          frame_table_get_user_page (PAL_ZERO, page_elem->writable);
+      add_owner (page_elem->frame_elem, page_elem->vaddr);
+
+      /* Read the contents of the file into the frame. */
+      filesys_acquire ();
+      file_seek (page_elem->file, page_elem->offset);
+      int bytes_read = file_read (page_elem->file, page_elem->frame_elem->frame,
+                                  page_elem->bytes_read);
+      filesys_release ();
+
+      /* Check that the read was fine. */
+      if (bytes_read != (int) page_elem->bytes_read)
         exit_util (KILLED);
-      /* Add the page to the process's address space. */
-      if (!install_page (page_elem->vaddr, kpage, page_elem->writable))
-        {
-          //frame_table_free_user_page (kpage);
-          exit_util (KILLED);
-        }
     }
-
-  /* Read the contents of the file into the frame. */
-  filesys_acquire ();
-  file_seek (page_elem->file, page_elem->offset);
-  int bytes_read = file_read (page_elem->file, kpage, page_elem->bytes_read);
-  filesys_release ();
-
-  /* Load data into the page. */
-  if (bytes_read != (int) page_elem->bytes_read)
-    {
-      //frame_table_free_user_page (kpage);
-      exit_util (KILLED);
-    }
-  memset (kpage + page_elem->bytes_read, 0, page_elem->zero_bytes);
 }

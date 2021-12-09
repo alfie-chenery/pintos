@@ -58,8 +58,7 @@ write_to_swap (size_t index, void *kpage)
   for (int i = 0; i < SECTORS_PER_PAGE; i++) 
     {
       block_sector_t sector = (block_sector_t) (index * SECTORS_PER_PAGE + i);
-      block_write 
-        (swap_block, sector, kpage + (i * BLOCK_SECTOR_SIZE));
+      block_write (swap_block, sector, kpage + (i * BLOCK_SECTOR_SIZE));
     }
 }
 
@@ -92,7 +91,7 @@ swap_kpage_out (size_t index, void *kpage)
   /* Remove corresponding swap entry from swap table. */
   struct swap_slot del;
   del.index = index;
-  ASSERT (!hash_delete (&swap_table, &del.elem));
+  ASSERT (hash_delete (&swap_table, &del.elem));
 
   /* Reading the contents at the index into the page */
   read_into_kpage (index, kpage);

@@ -28,8 +28,9 @@ struct frame_elem
   };
 
 void frame_table_init (void);
-void *frame_table_get_user_page (enum palloc_flags flags);
-void frame_table_free_user_page (void *page);
+struct frame_elem *frame_table_get_user_page (enum palloc_flags, bool writable);
 void swap_in_frame (struct frame_elem *frame_elem);
+void add_owner (struct frame_elem *frame_elem, void *vaddr);
+void free_frame_elem (struct frame_elem *frame_elem);
 
 #endif
