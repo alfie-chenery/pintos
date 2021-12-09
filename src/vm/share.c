@@ -152,7 +152,8 @@ free_frame_for_rox (struct page_elem *page_elem)
   ASSERT (e != NULL);
   struct share_elem *share_elem = hash_entry (e, struct share_elem, elem);
 
-  /* Decrementing open count by 1 and freeing if it has become equal to 0. */
+  /* Decrementing open count by 1 and freeing if it has become equal to 0, or 
+     removing the running thread from the owners of the frame otherwise. */
   share_elem->cnt--;
   if (share_elem->cnt == 0)
     {
@@ -161,6 +162,8 @@ free_frame_for_rox (struct page_elem *page_elem)
       free_frame_elem (share_elem->frame_elem);
       free (share_elem);
     }
+  else
+    remove_owner (share_elem->frame_elem);
 
   lock_release (&share_table_lock);
 }

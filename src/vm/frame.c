@@ -71,6 +71,7 @@ evict_frame (void)
     {
       struct thread_list_elem *t = 
           list_entry (e, struct thread_list_elem, elem);
+      ASSERT (t->t->magic == 0xcd6abf4b)
       pagedir_clear_page (t->t->pagedir, t->vaddr);
     }
 
@@ -161,7 +162,8 @@ swap_in_frame (struct frame_elem *frame_elem)
     {
         struct thread_list_elem *t = 
             list_entry (e, struct thread_list_elem, elem);
-        pagedir_set_page (t->t->pagedir, t->vaddr, page, frame_elem->writable);
+        ASSERT (t->t->magic == 0xcd6abf4b);
+        ASSERT (pagedir_set_page (t->t->pagedir, t->vaddr, page, frame_elem->writable));
     }
 done:
   lock_release (&frame_table_lock);
@@ -174,7 +176,12 @@ add_owner (struct frame_elem *frame_elem, void *vaddr)
 {
   struct thread_list_elem *t = malloc (sizeof (struct thread_list_elem));
   ASSERT (t != NULL);
-  ASSERT (frame_elem->frame != NULL);
+  if (frame_elem->frame == NULL)
+    {
+      ASSERT (frame_elem->swapped);
+      swap_in_frame (frame_elem);
+    }
+
   t->t = thread_current ();
   t->vaddr = vaddr;
 
@@ -184,6 +191,29 @@ add_owner (struct frame_elem *frame_elem, void *vaddr)
   lock_acquire (&frame_table_lock);
   list_push_back (&frame_elem->owners, &t->elem);
   lock_release (&frame_table_lock);
+}
+
+/* Removes the running thread from the list of owners of the frame_elem. */
+void
+remove_owner (struct frame_elem *frame_elem)
+{
+  for (struct list_elem *e = list_begin (&frame_elem->owners);
+       e != list_end (&frame_elem->owners);
+       e = list_next (e))
+    {
+      struct thread_list_elem *t = 
+          list_entry (e, struct thread_list_elem, elem);
+      if (t->t == thread_current ())
+        {
+          list_remove (&t->elem);
+          free (t);
+          return;
+        }
+    }
+
+  /* We should not reach here as this means the running thread did not belong to
+     the owners of the frame. */
+  NOT_REACHED ();
 }
 
 /* Frees a frame_elem and the frame pointer stored inside it. It is assumed that
