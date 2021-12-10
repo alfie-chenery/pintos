@@ -4,6 +4,7 @@
 #include "userprog/pagedir.h"
 #include "userprog/syscall.h"
 #include "filesys/file.h"
+#include <stdio.h>
 
 /* The frame table. */
 static struct hash frame_table;
@@ -50,7 +51,7 @@ insert_frame (void *frame)
   list_init (&frame_elem->owners);
 
   /* Adding the frame to the frame table and all_frames list. */
-  hash_insert (&frame_table, &frame_elem->elem);
+  ASSERT (hash_insert (&frame_table, &frame_elem->elem) == NULL);
   list_push_back (&all_frames, &frame_elem->all_elem); 
 
   return frame_elem;
@@ -105,6 +106,7 @@ evict_frame (void)
 
   /* Find a frame to evict. */
   struct frame_elem *to_evict = choose_frame_to_evict ();
+  //printf ("DEBUG Evicting %p which is %p\n", to_evict->frame, to_evict->page_elem);
 
   ASSERT (!to_evict->swapped);
   to_evict->swapped = true;
@@ -131,7 +133,7 @@ evict_frame (void)
       struct page_elem *page_elem = to_evict->page_elem;
       filesys_acquire ();
       file_seek (page_elem->file, page_elem->offset);
-      file_write (page_elem->file, to_evict->frame, page_elem->bytes_read);
+      ASSERT (file_write (page_elem->file, to_evict->frame, page_elem->bytes_read) == page_elem->bytes_read);
       filesys_release ();
     }
   else
@@ -139,8 +141,7 @@ evict_frame (void)
 
   /* Remove the frame from the hash table and the all list. */
   list_remove (&to_evict->all_elem);
-  hash_find (&frame_table, &to_evict->elem);
-  hash_delete (&frame_table, &to_evict->elem);
+  ASSERT (hash_delete (&frame_table, &to_evict->elem));
 
   /* Free the physical memory of the frame and mark that in the frame_elem. */
   palloc_free_page (to_evict->frame);
@@ -161,10 +162,10 @@ frame_table_init (void)
 struct frame_elem *
 frame_table_get_user_page (enum palloc_flags flags, bool writable)
 {
-  lock_acquire (&frame_table_lock);
+  //lock_acquire (&frame_table_lock);
   void *page = palloc_get_page (PAL_USER | flags);
   
-  //lock_acquire (&frame_table_lock);
+  lock_acquire (&frame_table_lock);
   if (page == NULL)
     {
       /* TODO: evict frame returns the frame elem so you do not have to palloc again. */
@@ -174,10 +175,10 @@ frame_table_get_user_page (enum palloc_flags flags, bool writable)
     }
 
   struct frame_elem *frame_elem = insert_frame (page);
-  //lock_release (&frame_table_lock);
+  lock_release (&frame_table_lock);
 
   frame_elem->writable = writable;
-  lock_release (&frame_table_lock);
+  //lock_release (&frame_table_lock);
   return frame_elem;
 }
 
@@ -185,7 +186,12 @@ frame_table_get_user_page (enum palloc_flags flags, bool writable)
 void
 swap_in_frame (struct frame_elem *frame_elem)
 {
-  lock_acquire (&frame_table_lock);
+  bool locked = false;
+  if (!lock_held_by_current_thread (&frame_table_lock))
+    {
+      locked = true;
+      lock_acquire (&frame_table_lock);
+    }
 
   /* We need this check because multiple threads can call this function at the 
      same time but we want to make sure that we do not palloc a frame twice. */
@@ -207,6 +213,7 @@ swap_in_frame (struct frame_elem *frame_elem)
      they may see incorrect data otherwise. */
   if (frame_elem->page_elem)
     {
+      ASSERT (list_size (&frame_elem->owners) == 1);
       struct page_elem *page_elem = frame_elem->page_elem;
       filesys_acquire ();
       file_seek (page_elem->file, page_elem->offset);
@@ -222,7 +229,7 @@ swap_in_frame (struct frame_elem *frame_elem)
 
   /* Insert the frame to the hash table and all list. */
   list_push_back (&all_frames, &frame_elem->all_elem);
-  hash_insert (&frame_table, &frame_elem->elem);
+  ASSERT (hash_insert (&frame_table, &frame_elem->elem) == NULL);
 
   /* Add the frame to all the owning thread's page directories. */
   for (struct list_elem *e = list_begin (&frame_elem->owners);
@@ -235,7 +242,8 @@ swap_in_frame (struct frame_elem *frame_elem)
         ASSERT (pagedir_set_page (t->t->pagedir, t->vaddr, page, frame_elem->writable));
     }
 done:
-  lock_release (&frame_table_lock);
+  if (locked)
+    lock_release (&frame_table_lock);
 }
 
 /* Adds the running thread to the list of owners of a frame_elem and installs 
@@ -243,6 +251,7 @@ done:
 void
 add_owner (struct frame_elem *frame_elem, void *vaddr)
 {
+  lock_acquire (&frame_table_lock);
   struct thread_list_elem *t = malloc (sizeof (struct thread_list_elem));
   ASSERT (t != NULL);
   if (frame_elem->frame == NULL)
@@ -251,7 +260,7 @@ add_owner (struct frame_elem *frame_elem, void *vaddr)
       swap_in_frame (frame_elem);
     }
 
-  lock_acquire (&frame_table_lock);
+  //lock_acquire (&frame_table_lock);
   t->t = thread_current ();
   t->vaddr = vaddr;
 
@@ -297,13 +306,8 @@ free_frame_elem (struct frame_elem *frame_elem)
   lock_acquire (&frame_table_lock);
   //ASSERT (*((uint8_t *) frame_elem) != 0xcc);
 
-  /* Freeing the swap space or the frame pointer. */
-  if (frame_elem->swapped)
-    free_swap_elem (frame_elem->swap_id);
-  else
-    palloc_free_page (frame_elem->frame);
-
   /* Free the list of owners of the thread. */
+  ASSERT (list_size (&frame_elem->owners) == 1);
   while (!list_empty (&frame_elem->owners))
     {
       struct list_elem *e = list_begin (&frame_elem->owners);
@@ -319,10 +323,18 @@ free_frame_elem (struct frame_elem *frame_elem)
     {
       ASSERT (frame_elem->frame != NULL);
       //lock_acquire (&frame_table_lock);
-      hash_delete (&frame_table, &frame_elem->elem);
+      ASSERT (hash_delete (&frame_table, &frame_elem->elem));
       list_remove (&frame_elem->all_elem);
       //lock_release (&frame_table_lock);
     }
+
+  //printf ("DEBUG Freeing %p which is %p for %i\n", frame_elem->frame, frame_elem->page_elem, thread_tid ());
+
+  /* Freeing the swap space or the frame pointer. */
+  if (frame_elem->swapped)
+    free_swap_elem (frame_elem->swap_id);
+  else
+    palloc_free_page (frame_elem->frame);
 
   free (frame_elem);
   lock_release (&frame_table_lock);

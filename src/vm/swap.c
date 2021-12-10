@@ -113,7 +113,7 @@ swap_kpage_in (void *kpage)
 
   /* find the first unused slot by searching for first bit set to false */
   size_t idx = bitmap_scan_and_flip (used_slots, 0, 1, false);
-  size_t count = bitmap_count(used_slots, 0, bitmap_size(used_slots), false);
+  //size_t count = bitmap_count(used_slots, 0, bitmap_size(used_slots), false);
   //printf("Slots left: %d\n", count);
   //if (count <= 905) {
   //  printf("BREAK HERE\n");
@@ -136,6 +136,7 @@ free_swap_elem (size_t index)
 {
   lock_acquire (&swap_lock);
   
+  ASSERT (bitmap_test (used_slots, index));
   bitmap_set (used_slots, index, false);
   /* Assert the swap tables bit at the index is set to false */
   ASSERT (!bitmap_test (used_slots, index));

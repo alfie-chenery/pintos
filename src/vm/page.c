@@ -94,9 +94,11 @@ void
 remove_page_elem (struct hash *supplemental_page_table, struct page_elem *page)
 {
   struct hash_elem *elem = hash_delete (supplemental_page_table, &page->elem);
+  ASSERT (hash_entry (elem, struct page_elem, elem) == page);
   ASSERT (elem != NULL);
   
   ASSERT (!page->rox);
+  ASSERT (page->mmap);
   if (page->frame_elem != NULL)
     free_frame_elem (page->frame_elem);
   free (page);
@@ -142,6 +144,7 @@ static void
 destroy_hash_elem (struct hash_elem *e, void *aux UNUSED)
 {
   struct page_elem *page_elem = hash_entry (e, struct page_elem, elem);
+  ASSERT (!page_elem->mmap);
   if (page_elem->frame_elem == NULL)
     goto done;
   
@@ -207,7 +210,10 @@ allocate_frame (void *fault_addr)
 
       /* Mark in frame if this is mmap file. */
       if (page_elem->mmap)
-        page_elem->frame_elem->page_elem = page_elem; 
+        {
+          //printf ("DEBUG %p got %p for %i\n", page_elem->vaddr, page_elem->frame_elem->frame, thread_tid ());
+          page_elem->frame_elem->page_elem = page_elem;
+        }
 
       /* Read the contents of the file into the frame. */
       filesys_acquire ();
