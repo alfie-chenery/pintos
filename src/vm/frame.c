@@ -149,6 +149,11 @@ evict_frame (void)
   struct hash_elem *e = hash_delete (&frame_table, &to_evict->elem);
   ASSERT (e);
 
+  /* We do this to ensure there are no race conditions during the time when the
+     frame table lock is released. */
+  void *freed_frame = to_evict->frame;
+  to_evict->frame = NULL;
+
   /* Swap the contents using the swap table or the file in case of mmap frames. 
      We place this after clearing the page directories of all threads so that if
      they tried to modify the frame then the changes get written to the swap 
@@ -165,17 +170,16 @@ evict_frame (void)
       struct page_elem *page_elem = to_evict->page_elem;
       filesys_acquire ();
       file_seek (page_elem->file, page_elem->offset);
-      file_write (page_elem->file, to_evict->frame, page_elem->bytes_read);
+      file_write (page_elem->file, freed_frame, page_elem->bytes_read);
       filesys_release ();
 
       lock_acquire (&frame_table_lock);
     }
   else
-    to_evict->swap_id = swap_kpage_in (to_evict->frame);
+    to_evict->swap_id = swap_kpage_in (freed_frame);
 
   /* Free the physical memory of the frame and mark that in the frame_elem. */
-  palloc_free_page (to_evict->frame);
-  to_evict->frame = NULL;
+  palloc_free_page (freed_frame);
 }
 
 /* Initializes the frame table and its lock. */

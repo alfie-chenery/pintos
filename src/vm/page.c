@@ -216,7 +216,7 @@ allocate_frame (void *fault_addr)
       /* Read the contents of the file into the frame. */
       filesys_acquire ();
       file_seek (page_elem->file, page_elem->offset);
-      int bytes_read = file_read (page_elem->file, page_elem->frame_elem->frame,
+      file_read (page_elem->file, page_elem->frame_elem->frame,
                                   page_elem->bytes_read);
       filesys_release ();
     }
