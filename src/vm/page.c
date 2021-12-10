@@ -22,8 +22,8 @@ page_hash (const struct hash_elem *e, void *aux UNUSED)
 
 /* Compares two page_elem. */
 static bool
-page_less (const struct hash_elem *a, 
-           const struct hash_elem *b, 
+page_less (const struct hash_elem *a,
+           const struct hash_elem *b,
            void *aux UNUSED)
 {
   void *address_a = hash_entry (a, struct page_elem, elem)->vaddr;
@@ -32,22 +32,22 @@ page_less (const struct hash_elem *a,
 }
 
 /* Initializes a supplemental page table. */
-void 
+void
 supplemental_page_table_init (struct hash *supplemental_page_table)
 {
   hash_init (supplemental_page_table, page_hash, page_less, NULL);
 }
 
 /* Inserting a page element into the supplemental page table. */
-void 
-insert_supplemental_page_entry (struct hash *supplemental_page_table, 
+void
+insert_supplemental_page_entry (struct hash *supplemental_page_table,
                                 struct page_elem *page)
 {
   hash_replace (supplemental_page_table, &page->elem);
 }
 
 /* Smart constructor to create a page_elem */
-struct page_elem * 
+struct page_elem *
 create_page_elem (void *vaddr, struct file *file, size_t offset,
                   size_t bytes_read, size_t zero_bytes, bool writable)
 {
@@ -96,7 +96,7 @@ remove_page_elem (struct hash *supplemental_page_table, struct page_elem *page)
   struct hash_elem *elem = hash_delete (supplemental_page_table, &page->elem);
   ASSERT (hash_entry (elem, struct page_elem, elem) == page);
   ASSERT (elem != NULL);
-  
+
   ASSERT (!page->rox);
   ASSERT (page->mmap);
   if (page->frame_elem != NULL)
@@ -106,7 +106,7 @@ remove_page_elem (struct hash *supplemental_page_table, struct page_elem *page)
 
 /* Smart constructor to create a page elem using only a virtual address. This is
    only called while allocating a stack page. */
-static struct page_elem * 
+static struct page_elem *
 create_page_elem_only_vaddr (void *vaddr)
 {
   struct page_elem *page = malloc (sizeof (struct page_elem));
@@ -121,9 +121,9 @@ create_page_elem_only_vaddr (void *vaddr)
   return page;
 }
 
-/* Lazily allocates a stack page for the processes exceeding one page of 
+/* Lazily allocates a stack page for the processes exceeding one page of
    memory. */
-void 
+void
 allocate_stack_page (void *fault_addr)
 {
   ASSERT (is_user_vaddr (fault_addr));
@@ -147,15 +147,15 @@ destroy_hash_elem (struct hash_elem *e, void *aux UNUSED)
   ASSERT (!page_elem->mmap);
   if (page_elem->frame_elem == NULL)
     goto done;
-  
+
   /* Call the appropriate free function. */
   if (page_elem->rox)
     free_frame_for_rox (page_elem);
   else
     free_frame_elem (page_elem->frame_elem);
-  
+
 done:
-  /* Clear the page directory and free the struct page_elem since it was 
+  /* Clear the page directory and free the struct page_elem since it was
      malloced on the heap. */
   pagedir_clear_page (thread_current ()->pagedir, page_elem->vaddr);
   free (page_elem);
@@ -168,10 +168,10 @@ supplemental_page_table_destroy (struct hash *supplemental_page_table)
   hash_destroy (supplemental_page_table, destroy_hash_elem);
 }
 
-/* Lazy allocation of a frame from page fault handler. This function must only 
-   be called when a file needs to be loaded and not when the staCK needs to be 
+/* Lazy allocation of a frame from page fault handler. This function must only
+   be called when a file needs to be loaded and not when the staCK needs to be
    grown. */
-void 
+void
 allocate_frame (void *fault_addr)
 {
   struct thread *t = thread_current ();
@@ -179,12 +179,12 @@ allocate_frame (void *fault_addr)
   struct page_elem page;
   page.vaddr = fault_addr;
 
-  /* Find the page_elem entry in the supplemental page table of the current 
+  /* Find the page_elem entry in the supplemental page table of the current
      thread for the fault address. */
   struct hash_elem *elem = hash_find (&supplemental_page_table, &page.elem);
   ASSERT (elem != NULL);
   struct page_elem *page_elem = hash_entry (elem, struct page_elem, elem);
-  
+
   if (page_elem->frame_elem != NULL)
     {
       /* Frame has been swapped. */
@@ -204,7 +204,7 @@ allocate_frame (void *fault_addr)
   else
     {
       /* Need to allocate a new frame and copy contents from file. */
-      page_elem->frame_elem = 
+      page_elem->frame_elem =
           frame_table_get_user_page (PAL_ZERO, page_elem->writable);
       add_owner (page_elem->frame_elem, page_elem->vaddr);
 
