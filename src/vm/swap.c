@@ -108,7 +108,7 @@ swap_kpage_in (void *kpage)
 {
   struct swap_slot *elem = malloc (sizeof (struct swap_slot));
   ASSERT (elem);
-  
+
   lock_acquire (&swap_lock);
 
   /* find the first unused slot by searching for first bit set to false */
