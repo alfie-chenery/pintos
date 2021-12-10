@@ -5,6 +5,7 @@
 #include <lib/kernel/hash.h>
 #include <threads/thread.h>
 
+/* Holding information about the swap slot */
 struct swap_slot 
   {
     size_t index;                   /* Index into the swap table. */
