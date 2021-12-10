@@ -144,25 +144,34 @@ evict_frame (void)
         pagedir_clear_page (t->t->pagedir, t->vaddr);
     }
 
+  /* Remove the frame from the hash table and the all list. */
+  list_remove (&to_evict->all_elem);
+  struct hash_elem *e = hash_delete (&frame_table, &to_evict->elem);
+  ASSERT (e);
+
   /* Swap the contents using the swap table or the file in case of mmap frames. 
      We place this after clearing the page directories of all threads so that if
      they tried to modify the frame then the changes get written to the swap 
      table. */
   if (to_evict->page_elem && is_dirty)
     {
+      /* We release frame_table lock here to avoid any deadlocks with the file
+         system lock. Note that this does not cause any race conditions in the
+         frame table since the frame we are operating on does not belong to the
+         hash table or the list and the memory for it has not been freed as 
+         well. */
+      lock_release (&frame_table_lock);
+
       struct page_elem *page_elem = to_evict->page_elem;
       filesys_acquire ();
       file_seek (page_elem->file, page_elem->offset);
       file_write (page_elem->file, to_evict->frame, page_elem->bytes_read);
       filesys_release ();
+
+      lock_acquire (&frame_table_lock);
     }
   else
     to_evict->swap_id = swap_kpage_in (to_evict->frame);
-
-  /* Remove the frame from the hash table and the all list. */
-  list_remove (&to_evict->all_elem);
-  struct hash_elem *e = hash_delete (&frame_table, &to_evict->elem);
-  ASSERT (e);
 
   /* Free the physical memory of the frame and mark that in the frame_elem. */
   palloc_free_page (to_evict->frame);
@@ -234,12 +243,20 @@ swap_in_frame (struct frame_elem *frame_elem)
      they may see incorrect data otherwise. */
   if (frame_elem->page_elem)
     {
+      /* Once again, we release the frame table lock here to avoid deadlocks 
+         with the file system lock. Like the other case, there are no race 
+         conditions here if we re-acquire the lock right after releasing the 
+         filesystem lock. */
+      lock_release (&frame_table_lock);
+
       ASSERT (list_size (&frame_elem->owners) == 1);
       struct page_elem *page_elem = frame_elem->page_elem;
       filesys_acquire ();
       file_seek (page_elem->file, page_elem->offset);
       file_read (page_elem->file, page, page_elem->bytes_read);
       filesys_release ();
+
+      lock_acquire (&frame_table_lock);
     }
   else
     swap_kpage_out (frame_elem->swap_id, page);

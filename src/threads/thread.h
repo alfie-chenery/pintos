@@ -141,7 +141,7 @@ struct thread
     struct list children;                /* List of all children. */
     struct file *loaded_file;            /* File loaded during load */
     struct list mapids;                  /* List of mappings. */
-    int next_mapid;                  /* An unused mapping ID. */
+    int next_mapid;                      /* An unused mapping ID. */
 #endif
 
     /* Owned by thread.c. */
