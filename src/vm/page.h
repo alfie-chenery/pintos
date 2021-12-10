@@ -16,6 +16,7 @@ struct page_elem
     size_t zero_bytes;             /* Number of zero bytes */
     bool writable;                 /* File is writable */
     bool rox;                      /* Is it a read only executable. */
+    bool mmap;                     /* Is this an mmap file. */
     struct hash_elem elem;         /* To create a hash table. */
   };
 

@@ -5,6 +5,7 @@
 #include "lib/kernel/hash.h"
 #include "lib/kernel/list.h"
 #include "threads/palloc.h"
+#include "vm/page.h"
 
 /* A struct to create a list of threads who have a frame in their page \
    directory and the user address where they have it. */
@@ -18,13 +19,14 @@ struct thread_list_elem
 /* Stores an entry in the frame table. */
 struct frame_elem 
   {
-    void *frame;                /* Pointer to frame in memory. */
-    bool swapped;               /* If the frame is currently swapped. */
-    size_t swap_id;             /* The swap id if it is swapped. */
-    struct list owners;         /* The threads which own the list. */ 
-    bool writable;              /* If the frame is writable. */
-    struct hash_elem elem;      /* To add this in a hash table. */
-    struct list_elem all_elem;  /* For creating list of all frames. */
+    void *frame;                 /* Pointer to frame in memory. */
+    struct page_elem *page_elem; /* Pointer to page_elem for mmap frames. */
+    bool swapped;                /* If the frame is currently swapped. */
+    size_t swap_id;              /* The swap id if it is swapped. */
+    struct list owners;          /* The threads which own the list. */ 
+    bool writable;               /* If the frame is writable. */
+    struct hash_elem elem;       /* To add this in a hash table. */
+    struct list_elem all_elem;   /* For creating list of all frames. */
   };
 
 void frame_table_init (void);

@@ -2,6 +2,8 @@
 #include "threads/malloc.h"
 #include "vm/swap.h"
 #include "userprog/pagedir.h"
+#include "userprog/syscall.h"
+#include "filesys/file.h"
 
 /* The frame table. */
 static struct hash frame_table;
@@ -44,6 +46,7 @@ insert_frame (void *frame)
 
   frame_elem->frame = frame;
   frame_elem->swapped = false;
+  frame_elem->page_elem = NULL;
   list_init (&frame_elem->owners);
 
   /* Adding the frame to the frame table and all_frames list. */
@@ -118,8 +121,21 @@ evict_frame (void)
       pagedir_clear_page (t->t->pagedir, t->vaddr);
     }
 
-  /* Swap the contents using the swap table. */
-  to_evict->swap_id = swap_kpage_in (to_evict->frame);
+  /* Swap the contents using the swap table or the file in case of mmap frames. 
+     We place this after clearing the page directories of all threads so that if
+     they tried to modify the frame then the changes get written to the swap 
+     table. */
+  if (to_evict->page_elem)
+    {
+      /* TODO: check for dirty bit. */
+      struct page_elem *page_elem = to_evict->page_elem;
+      filesys_acquire ();
+      file_seek (page_elem->file, page_elem->offset);
+      file_write (page_elem->file, to_evict->frame, page_elem->bytes_read);
+      filesys_release ();
+    }
+  else
+    to_evict->swap_id = swap_kpage_in (to_evict->frame);
 
   /* Remove the frame from the hash table and the all list. */
   list_remove (&to_evict->all_elem);
@@ -176,20 +192,29 @@ swap_in_frame (struct frame_elem *frame_elem)
   if (frame_elem->frame != NULL)
     goto done;
 
-  void *page = palloc_get_page (PAL_USER);
+  void *page = palloc_get_page (PAL_USER | PAL_ZERO);
 
   /* Evict a frame if a new frame could not be obtained. */
   if (page == NULL)
     {
       evict_frame ();
-      page = palloc_get_page (PAL_USER);
+      page = palloc_get_page (PAL_USER | PAL_ZERO);
       ASSERT (page != NULL);
     }
 
-  /* Bring in the page from the swap table. Note that this must be done before 
-     adding the frame to the threads' page directories as they may see incorrect
-     data otherwise. */
-  swap_kpage_out (frame_elem->swap_id, page);
+  /* Bring in the page from the swap table or the file system. Note that this 
+     must be done before adding the frame to the threads' page directories as 
+     they may see incorrect data otherwise. */
+  if (frame_elem->page_elem)
+    {
+      struct page_elem *page_elem = frame_elem->page_elem;
+      filesys_acquire ();
+      file_seek (page_elem->file, page_elem->offset);
+      file_read (page_elem->file, page, page_elem->bytes_read);
+      filesys_release ();
+    }
+  else
+    swap_kpage_out (frame_elem->swap_id, page);
 
   /* Mark that the frame is no longer swapped and update the frame. */
   frame_elem->swapped = false;
@@ -222,7 +247,7 @@ add_owner (struct frame_elem *frame_elem, void *vaddr)
   ASSERT (t != NULL);
   if (frame_elem->frame == NULL)
     {
-      ASSERT (frame_elem->swapped);
+      //ASSERT (frame_elem->swapped);
       swap_in_frame (frame_elem);
     }
 

@@ -62,6 +62,7 @@ create_page_elem (void *vaddr, struct file *file, size_t offset,
   page->zero_bytes = zero_bytes;
   page->writable = writable;
   page->rox = false;
+  page->mmap = false;
   page->frame_elem = NULL;
   return page;
 }
@@ -112,6 +113,7 @@ create_page_elem_only_vaddr (void *vaddr)
 
   page->vaddr = vaddr;
   page->rox = false;
+  page->mmap = false;
   page->frame_elem = NULL;
   page->writable = true;
   return page;
@@ -184,7 +186,7 @@ allocate_frame (void *fault_addr)
     {
       /* Frame has been swapped. */
       ASSERT (*(uint8_t *) page_elem->frame_elem != 0xcc);
-      //ASSERT (page_elem->frame_elem->swapped);
+      ASSERT (page_elem->frame_elem->swapped);
       swap_in_frame (page_elem->frame_elem);
     }
 
@@ -202,6 +204,10 @@ allocate_frame (void *fault_addr)
       page_elem->frame_elem = 
           frame_table_get_user_page (PAL_ZERO, page_elem->writable);
       add_owner (page_elem->frame_elem, page_elem->vaddr);
+
+      /* Mark in frame if this is mmap file. */
+      if (page_elem->mmap)
+        page_elem->frame_elem->page_elem = page_elem; 
 
       /* Read the contents of the file into the frame. */
       filesys_acquire ();

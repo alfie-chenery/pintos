@@ -25,7 +25,7 @@
 #define USER_STACK_PAGE_SIZE 4096
 #define USER_STACK_BASE_SIZE 12
 #define KB_TO_BYTES 1024
-#define MAX_USER_PROCESS_STACK_SPACE (2 * KB_TO_BYTES * KB_TO_BYTES)
+#define MAX_USER_PROCESS_STACK_SPACE (5 * KB_TO_BYTES * KB_TO_BYTES)
 
 /* Creates a user_elem for a new process */
 static struct user_elem *

@@ -448,9 +448,11 @@ mmap_h (struct intr_frame *f)
           = create_page_elem (page, file, ofs, bytes_read, zero_bytes, true);
 
       /* Return if the page_elem could not be malloced. */
-      /* TODO: erase pages that were allocated earlier. */
       if (page_elem == NULL)
         return;
+
+      /* Mark the page_elem to be for an mmap. */
+      page_elem->mmap = true;
 
       /* Add the page_elem to the supplemental page table. */
       insert_supplemental_page_entry (&t->supplemental_page_table, page_elem);
