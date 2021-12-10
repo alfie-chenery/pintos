@@ -17,13 +17,13 @@ struct thread_list_elem
   };
 
 /* Stores an entry in the frame table. */
-struct frame_elem 
+struct frame_elem
   {
     void *frame;                 /* Pointer to frame in memory. */
     struct page_elem *page_elem; /* Pointer to page_elem for mmap frames. */
     bool swapped;                /* If the frame is currently swapped. */
     size_t swap_id;              /* The swap id if it is swapped. */
-    struct list owners;          /* The threads which own the frame. */ 
+    struct list owners;          /* The threads which own the frame. */
     bool writable;               /* If the frame is writable. */
     struct hash_elem elem;       /* To add this in a hash table. */
     struct list_elem all_elem;   /* For creating list of all frames. */

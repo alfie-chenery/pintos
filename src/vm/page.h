@@ -23,7 +23,7 @@ struct page_elem
 /* TODO: Maybe remove struct hash * from function def. */
 void supplemental_page_table_init (struct hash *);
 void insert_supplemental_page_entry (struct hash *, struct page_elem *);
-struct page_elem *create_page_elem (void *, struct file *, size_t, 
+struct page_elem *create_page_elem (void *, struct file *, size_t,
                                     size_t, size_t, bool);
 bool contains_vaddr (struct hash *, void *);
 void allocate_frame (void *);
