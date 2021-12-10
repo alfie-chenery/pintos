@@ -2,7 +2,6 @@
 #include "vm/frame.h"
 #include <lib/kernel/bitmap.h>
 #include <threads/vaddr.h>
-#include <threads/malloc.h>
 #include <threads/palloc.h>
 
 #define SECTORS_PER_PAGE (PGSIZE / BLOCK_SECTOR_SIZE)
@@ -78,9 +77,6 @@ swap_kpage_out (size_t index, void *kpage)
 size_t
 swap_kpage_in (void *kpage) 
 {
-  struct swap_slot *elem = malloc (sizeof (struct swap_slot));
-  ASSERT (elem);
-
   lock_acquire (&swap_lock);
 
   /* find the first unused slot by searching for first bit set to false */
@@ -88,9 +84,7 @@ swap_kpage_in (void *kpage)
 
   ASSERT (idx != BITMAP_ERROR);
   
-  elem->index = idx;
-  
-  write_to_swap (elem->index, kpage);
+  write_to_swap (idx, kpage);
   lock_release (&swap_lock);
   return idx;
 }
