@@ -6,7 +6,6 @@
 #include "threads/vaddr.h"
 #include "userprog/syscall.h"
 #include "userprog/process.h"
-#include <stdio.h>
 #include "filesys/file.h"
 #include "userprog/pagedir.h"
 #include "vm/share.h"
@@ -211,7 +210,6 @@ allocate_frame (void *fault_addr)
       /* Mark in frame if this is mmap file. */
       if (page_elem->mmap)
         {
-          //printf ("DEBUG %p got %p for %i\n", page_elem->vaddr, page_elem->frame_elem->frame, thread_tid ());
           page_elem->frame_elem->page_elem = page_elem;
         }
 
@@ -221,9 +219,5 @@ allocate_frame (void *fault_addr)
       int bytes_read = file_read (page_elem->file, page_elem->frame_elem->frame,
                                   page_elem->bytes_read);
       filesys_release ();
-
-      /* Check that the read was fine. */
-      if (bytes_read != (int) page_elem->bytes_read)
-        exit_util (KILLED);
     }
 }
