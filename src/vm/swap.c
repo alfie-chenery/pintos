@@ -16,34 +16,12 @@ static struct bitmap *used_slots;
 /* Global lock for the swap table. */
 static struct lock swap_lock;
 
-/* The global swap table. */
-static struct hash swap_table;
-
-/* Calculates the hash for a swap_elem. */
-static unsigned
-hash_swap_elem (const struct hash_elem *e, void *aux UNUSED) 
-{
-  size_t index = hash_entry (e, struct swap_slot, elem)->index;
-  return hash_int ((int) index);
-}
-
-/* Compares two swap_elem. */
-static bool
-hash_swap_less (const struct hash_elem *a, 
-               const struct hash_elem *b,
-               void *aux UNUSED) 
-{
-    size_t index1 = hash_entry (a, struct swap_slot, elem)->index;
-    size_t index2 = hash_entry (b, struct swap_slot, elem)->index;
-    return index1 < index2;
-}
-
 /* Initialises the swap table lock, hash table and all other members. */
 void
 swap_table_init (void) 
 {
     lock_init (&swap_lock);
-    hash_init (&swap_table, hash_swap_elem, hash_swap_less, NULL);
+    /* hash_init (&swap_table, hash_swap_elem, hash_swap_less, NULL); */
     swap_block = block_get_role (BLOCK_SWAP);
     used_slots = bitmap_create 
                     (block_size (swap_block) / SECTORS_PER_PAGE);
@@ -89,11 +67,6 @@ swap_kpage_out (size_t index, void *kpage)
   /* Assert the swap tables bit at the index is set to false */
   ASSERT (!bitmap_test (used_slots, index));
 
-  /* Remove corresponding swap entry from swap table. */
-  struct swap_slot del;
-  del.index = index;
-  ASSERT (hash_delete (&swap_table, &del.elem));
-
   /* Reading the contents at the index into the page */
   read_into_kpage (index, kpage);
   lock_release (&swap_lock);
@@ -117,9 +90,6 @@ swap_kpage_in (void *kpage)
   
   elem->index = idx;
   
-  struct hash_elem *e = hash_insert (&swap_table, &elem->elem);
-  ASSERT (!e);
-  
   write_to_swap (elem->index, kpage);
   lock_release (&swap_lock);
   return idx;
@@ -134,16 +104,5 @@ free_swap_elem (size_t index)
   bitmap_set (used_slots, index, false);
   /* Assert the swap tables bit at the index is set to false */
   ASSERT (!bitmap_test (used_slots, index));
-  
-  struct swap_slot elem;
-  elem.index = index;
-  
-  struct hash_elem *e = hash_delete (&swap_table, &elem.elem);
-  ASSERT (e != NULL);
-
   lock_release (&swap_lock);
-
-  /* Freeing all resources used by the swap_elem */
-  struct swap_slot *elem_free = hash_entry (e, struct swap_slot, elem);
-  free(elem_free);
 }
