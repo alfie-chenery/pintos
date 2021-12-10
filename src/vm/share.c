@@ -36,7 +36,7 @@ share_elem_hash (const struct hash_elem *e, void *aux UNUSED)
 
 /* Compares two share_elem. */
 static bool
-share_elem_less (const struct hash_elem *a, 
+share_elem_less (const struct hash_elem *a,
                  const struct hash_elem *b,
                  void *aux UNUSED)
 {
@@ -53,7 +53,7 @@ share_elem_less (const struct hash_elem *a,
 }
 
 /* Initializes the share table and the lock to control it. */
-void 
+void
 share_table_init (void)
 {
   hash_init (&share_table, share_elem_hash, share_elem_less, NULL);
@@ -62,7 +62,7 @@ share_table_init (void)
 
 /* Checks if an entry alreadys exists for a given rox. Returns NULL if one does
    not exist, otherwise increments its open count by one and returns that. It is
-   assumed that the current thread holds share_table_lock before calling this 
+   assumed that the current thread holds share_table_lock before calling this
    function. */
 static struct frame_elem *
 get_frame_if_exists (struct page_elem *page_elem)
@@ -92,48 +92,48 @@ get_frame_for_rox (struct page_elem *page_elem)
   /* Ensure that the file is read only. */
   ASSERT (file->deny_write);
 
-  /* We acquire the lock here so that if two thraeds call this function at the 
+  /* We acquire the lock here so that if two thraeds call this function at the
      same time with the same file *, then we do not malloc a copy twice. */
   lock_acquire (&share_table_lock);
 
   /* Check if a frame already exists for the rox. */
   struct frame_elem *frame_elem = get_frame_if_exists (page_elem);
-  if (frame_elem != NULL)
-    goto done;
+  if (frame_elem == NULL)
+  {
 
-  /* Create a copy for file so that we are unaffacted if the caller code decides
-     to change the contents of the pointer. */
-  struct file *file_copy = malloc (sizeof (struct file));
-  ASSERT (file_copy != NULL);
-  file_copy->inode = file->inode;
-  file_copy->pos = file->pos;
-  file_copy->deny_write = file->deny_write;
+    /* Create a copy for file so that we are unaffacted if the caller code decides
+       to change the contents of the pointer. */
+    struct file *file_copy = malloc (sizeof (struct file));
+    ASSERT (file_copy != NULL);
+    file_copy->inode = file->inode;
+    file_copy->pos = file->pos;
+    file_copy->deny_write = file->deny_write;
 
-  /* Create a share elem for the current file and allocate a farme for it. */
-  struct share_elem *share_elem = malloc (sizeof (struct share_elem));
-  ASSERT (share_elem != NULL);
-  share_elem->file = file_copy;
-  share_elem->cnt = 1;
-  share_elem->bytes_read = page_elem->bytes_read;
-  share_elem->frame_elem = frame_table_get_user_page (PAL_ZERO, false);
-  frame_elem = share_elem->frame_elem;
+    /* Create a share elem for the current file and allocate a farme for it. */
+    struct share_elem *share_elem = malloc (sizeof (struct share_elem));
+    ASSERT (share_elem != NULL);
+    share_elem->file = file_copy;
+    share_elem->cnt = 1;
+    share_elem->bytes_read = page_elem->bytes_read;
+    share_elem->frame_elem = frame_table_get_user_page (PAL_ZERO, false);
+    frame_elem = share_elem->frame_elem;
 
-  /* Insert the share_elem into the hash table. */
-  hash_insert (&share_table, &share_elem->elem);
+    /* Insert the share_elem into the hash table. */
+    hash_insert (&share_table, &share_elem->elem);
 
-  /* Load the contennts of the file into the frame. */
-  filesys_acquire ();
-  file_read (file_copy, frame_elem->frame, page_elem->bytes_read);
-  file_seek (file_copy, file_tell (file));
-  filesys_release ();
+    /* Load the contennts of the file into the frame. */
+    filesys_acquire ();
+    file_read (file_copy, frame_elem->frame, page_elem->bytes_read);
+    file_seek (file_copy, file_tell (file));
+    filesys_release ();
+  }
 
-done:
   add_owner (frame_elem, page_elem->vaddr);
   lock_release (&share_table_lock);
   return frame_elem;
 }
 
-/* Decrements the open count for the frame associated for a file. Deallocates 
+/* Decrements the open count for the frame associated for a file. Deallocates
    the frame if no one has it open. */
 void
 free_frame_for_rox (struct page_elem *page_elem)
@@ -152,7 +152,7 @@ free_frame_for_rox (struct page_elem *page_elem)
   ASSERT (e != NULL);
   struct share_elem *share_elem = hash_entry (e, struct share_elem, elem);
 
-  /* Decrementing open count by 1 and freeing if it has become equal to 0, or 
+  /* Decrementing open count by 1 and freeing if it has become equal to 0, or
      removing the running thread from the owners of the frame otherwise. */
   share_elem->cnt--;
   if (share_elem->cnt == 0)
