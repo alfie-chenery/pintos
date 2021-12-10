@@ -7,7 +7,7 @@
 #include "threads/palloc.h"
 #include "vm/page.h"
 
-/* A struct to create a list of threads who have a frame in their page \
+/* A struct to create a list of threads who have a given frame in their page
    directory and the user address where they have it. */
 struct thread_list_elem
   {

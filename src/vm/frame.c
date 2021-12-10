@@ -4,7 +4,7 @@
 #include "userprog/pagedir.h"
 #include "userprog/syscall.h"
 #include "filesys/file.h"
-#include <stdio.h>
+#include "threads/interrupt.h"
 
 /* The frame table. */
 static struct hash frame_table;
@@ -45,6 +45,7 @@ insert_frame (void *frame)
   ASSERT (frame != NULL);
   ASSERT (frame_elem != NULL);
 
+  /* Setting the fields of the frame_elem. */
   frame_elem->frame = frame;
   frame_elem->swapped = false;
   frame_elem->page_elem = NULL;
@@ -63,8 +64,10 @@ choose_frame_to_evict (void)
 {
   ASSERT (lock_held_by_current_thread (&frame_table_lock));
 
-  /* We check if the beginning of all frames has been accessed recently. If it 
-     has then we put it at the back of the list. Otherwise, we evict it. */
+  /* We check if the frame at the beginning of all frames list has been accessed
+     recently by checking the accessed bit of all the threads that use that 
+     frame. If it has then we put it at the back of the list. Otherwise, we 
+     evict it. */
   while (true)
     {
       struct frame_elem *frame_elem = 
@@ -79,12 +82,16 @@ choose_frame_to_evict (void)
         {
           struct thread_list_elem *t = 
               list_entry (e, struct thread_list_elem, elem);
-          ASSERT (t->t->magic == 0xcd6abf4b);
           if (pagedir_is_accessed (t->t->pagedir, t->vaddr))
             is_accessed = true;
+
+          /* We clear the accessed bit so that when we reach this frame next 
+             time, it has a chance of being evicted. */
           pagedir_set_accessed (t->t->pagedir, t->vaddr, false);
         }
 
+      /* Return this frame if it has not been accessed since we allocated it or
+         last considered it for eviction. */
       if (!is_accessed)
         return frame_elem;
 
@@ -106,10 +113,11 @@ evict_frame (void)
 
   /* Find a frame to evict. */
   struct frame_elem *to_evict = choose_frame_to_evict ();
-  //printf ("DEBUG Evicting %p which is %p\n", to_evict->frame, to_evict->page_elem);
 
   ASSERT (!to_evict->swapped);
   to_evict->swapped = true;
+
+  bool is_dirty = false;
 
   /* Remove the frame from the page directories of all the threads that are 
      using it. */
@@ -119,21 +127,33 @@ evict_frame (void)
     {
       struct thread_list_elem *t = 
           list_entry (e, struct thread_list_elem, elem);
-      ASSERT (t->t->magic == 0xcd6abf4b)
-      pagedir_clear_page (t->t->pagedir, t->vaddr);
+
+      /* If the current frame is for a frame_elem, then we need to check if the
+         dirty bit has been set. */
+      if (to_evict->page_elem)
+        {
+          /* We need to disable the interrupts here so that the thread cannot 
+             modify the memory in between us checking if it is dirty and 
+             marking the page as not present in the page directory. */
+          enum intr_level old_level = intr_disable ();
+          is_dirty = is_dirty || pagedir_is_dirty (t->t->pagedir, t->vaddr);
+          pagedir_clear_page (t->t->pagedir, t->vaddr);
+          intr_set_level (old_level);
+        }
+      else
+        pagedir_clear_page (t->t->pagedir, t->vaddr);
     }
 
   /* Swap the contents using the swap table or the file in case of mmap frames. 
      We place this after clearing the page directories of all threads so that if
      they tried to modify the frame then the changes get written to the swap 
      table. */
-  if (to_evict->page_elem)
+  if (to_evict->page_elem && is_dirty)
     {
-      /* TODO: check for dirty bit. */
       struct page_elem *page_elem = to_evict->page_elem;
       filesys_acquire ();
       file_seek (page_elem->file, page_elem->offset);
-      ASSERT (file_write (page_elem->file, to_evict->frame, page_elem->bytes_read) == page_elem->bytes_read);
+      file_write (page_elem->file, to_evict->frame, page_elem->bytes_read);
       filesys_release ();
     }
   else
@@ -141,7 +161,8 @@ evict_frame (void)
 
   /* Remove the frame from the hash table and the all list. */
   list_remove (&to_evict->all_elem);
-  ASSERT (hash_delete (&frame_table, &to_evict->elem));
+  struct hash_elem *e = hash_delete (&frame_table, &to_evict->elem);
+  ASSERT (e);
 
   /* Free the physical memory of the frame and mark that in the frame_elem. */
   palloc_free_page (to_evict->frame);
@@ -162,13 +183,11 @@ frame_table_init (void)
 struct frame_elem *
 frame_table_get_user_page (enum palloc_flags flags, bool writable)
 {
-  //lock_acquire (&frame_table_lock);
   void *page = palloc_get_page (PAL_USER | flags);
   
   lock_acquire (&frame_table_lock);
   if (page == NULL)
     {
-      /* TODO: evict frame returns the frame elem so you do not have to palloc again. */
       evict_frame ();
       page = palloc_get_page (PAL_USER | flags);
       ASSERT (page != NULL);
@@ -178,7 +197,6 @@ frame_table_get_user_page (enum palloc_flags flags, bool writable)
   lock_release (&frame_table_lock);
 
   frame_elem->writable = writable;
-  //lock_release (&frame_table_lock);
   return frame_elem;
 }
 
@@ -186,6 +204,9 @@ frame_table_get_user_page (enum palloc_flags flags, bool writable)
 void
 swap_in_frame (struct frame_elem *frame_elem)
 {
+  /* This function can be called externalls as well as internally by another 
+     function (which would already hold the frame table lock). Hence we need to
+     be careful that we do not acquire the lock twice. */
   bool locked = false;
   if (!lock_held_by_current_thread (&frame_table_lock))
     {
@@ -238,9 +259,9 @@ swap_in_frame (struct frame_elem *frame_elem)
     {
         struct thread_list_elem *t = 
             list_entry (e, struct thread_list_elem, elem);
-        ASSERT (t->t->magic == 0xcd6abf4b);
-        ASSERT (pagedir_set_page (t->t->pagedir, t->vaddr, page, frame_elem->writable));
+        pagedir_set_page (t->t->pagedir, t->vaddr, page, frame_elem->writable);
     }
+
 done:
   if (locked)
     lock_release (&frame_table_lock);
@@ -251,23 +272,21 @@ done:
 void
 add_owner (struct frame_elem *frame_elem, void *vaddr)
 {
-  lock_acquire (&frame_table_lock);
   struct thread_list_elem *t = malloc (sizeof (struct thread_list_elem));
   ASSERT (t != NULL);
-  if (frame_elem->frame == NULL)
-    {
-      //ASSERT (frame_elem->swapped);
-      swap_in_frame (frame_elem);
-    }
 
-  //lock_acquire (&frame_table_lock);
+  /* We acquire the lock here so that the frame does not get swapped in twice if
+     two threads call this function twice. */
+  lock_acquire (&frame_table_lock);
+  if (frame_elem->frame == NULL)
+      swap_in_frame (frame_elem);
+
   t->t = thread_current ();
   t->vaddr = vaddr;
 
   pagedir_set_page (thread_current ()->pagedir, vaddr, 
                     frame_elem->frame, frame_elem->writable);
 
-  //lock_acquire (&frame_table_lock);
   list_push_back (&frame_elem->owners, &t->elem);
   lock_release (&frame_table_lock);
 }
@@ -298,13 +317,12 @@ remove_owner (struct frame_elem *frame_elem)
 }
 
 /* Frees a frame_elem and the frame pointer stored inside it. It is assumed that
-   all its owners are already dead so we do not need to clear anything from the 
-   page directory of any thread. */
+   all its owners are already dead or in the process of exiting so we do not 
+   need to clear anything from the page directory of any thread. */
 void
 free_frame_elem (struct frame_elem *frame_elem)
 {
   lock_acquire (&frame_table_lock);
-  //ASSERT (*((uint8_t *) frame_elem) != 0xcc);
 
   /* Free the list of owners of the thread. */
   ASSERT (list_size (&frame_elem->owners) == 1);
@@ -322,13 +340,10 @@ free_frame_elem (struct frame_elem *frame_elem)
   if (!frame_elem->swapped)
     {
       ASSERT (frame_elem->frame != NULL);
-      //lock_acquire (&frame_table_lock);
-      ASSERT (hash_delete (&frame_table, &frame_elem->elem));
+      struct hash_elem *e = hash_delete (&frame_table, &frame_elem->elem);
+      ASSERT (e);
       list_remove (&frame_elem->all_elem);
-      //lock_release (&frame_table_lock);
     }
-
-  //printf ("DEBUG Freeing %p which is %p for %i\n", frame_elem->frame, frame_elem->page_elem, thread_tid ());
 
   /* Freeing the swap space or the frame pointer. */
   if (frame_elem->swapped)
