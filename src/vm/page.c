@@ -145,16 +145,16 @@ destroy_hash_elem (struct hash_elem *e, void *aux UNUSED)
 {
   struct page_elem *page_elem = hash_entry (e, struct page_elem, elem);
   ASSERT (!page_elem->mmap);
-  if (page_elem->frame_elem == NULL)
-    goto done;
+  if (page_elem->frame_elem != NULL)
+  {
 
-  /* Call the appropriate free function. */
-  if (page_elem->rox)
-    free_frame_for_rox (page_elem);
-  else
-    free_frame_elem (page_elem->frame_elem);
+    /* Call the appropriate free function. */
+    if (page_elem->rox)
+      free_frame_for_rox (page_elem);
+    else
+      free_frame_elem (page_elem->frame_elem);
+  }
 
-done:
   /* Clear the page directory and free the struct page_elem since it was
      malloced on the heap. */
   pagedir_clear_page (thread_current ()->pagedir, page_elem->vaddr);
