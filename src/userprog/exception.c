@@ -162,6 +162,7 @@ page_fault (struct intr_frame *f)
       if (write && !page_elem->writable)
         exit_util (KILLED);
 
+      /* Allocate a frame for the faulting address. */
       allocate_frame (page);
     }
   

@@ -473,6 +473,8 @@ munmap_util (struct mapid_elem *mapid)
   struct thread *t = thread_current ();
 
   filesys_acquire ();
+
+  /* Iterate through all the covered pages. */
   for (void *page = mapid->addr; page < mapid->addr + mapid->size; 
        page += PGSIZE)
     {
@@ -480,6 +482,7 @@ munmap_util (struct mapid_elem *mapid)
           get_page_elem (&t->supplemental_page_table, page);
       ASSERT (page_elem != NULL);
 
+      /* Write back to file if dirty bit is set. */
       void *kpage = pagedir_get_page (t->pagedir, page);
       if (pagedir_is_dirty (t->pagedir, page))
         {
@@ -487,12 +490,11 @@ munmap_util (struct mapid_elem *mapid)
           file_write (mapid->file, kpage, page_elem->bytes_read);
         }
 
+      /* Clear page directory and remove page from SPT. */
       pagedir_clear_page (t->pagedir, page);
       remove_page_elem (&t->supplemental_page_table, page_elem);
-
-      /* TODO: Remove page_elem from SPT and free it. */
-      /* Free even if not dirty. */
     }
+
   file_close (mapid->file);
   filesys_release ();
 }
